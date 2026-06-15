@@ -53,8 +53,23 @@ python3 desktop_app.py
 - `desktop_runner.py`: 文件解析、输出路径和提取执行层。
 - `extract.py`: 订单提取核心逻辑。
 - `rules/`: 客户别名、工作日和忽略规则。
+- `tests/`: 仓库内可运行的回归测试。
+- `data/`: 本地订单源文件和 Job Track 对照表，默认不提交。
+- `reports/`: 本地对比报告和临时提取结果，默认不提交。
 - `build_windows.bat`: Windows 打包脚本。
 - `build_mac.sh`: macOS 打包脚本。
+
+## 本地文件夹归类
+
+```text
+data/
+  input/order_excels_dedup/      本地订单 Excel 样本
+  reference/                     Job Track、人工整理结果等对照表
+reports/
+  jobtrack_0610_compare/         最近一次 Job Track 对比报告
+```
+
+`build/`、`dist/`、`*.zip`、`__pycache__/`、`.pytest_cache/` 都是可重新生成的产物，清理项目时可以删除。
 
 ## 数据安全
 

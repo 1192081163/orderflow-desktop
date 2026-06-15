@@ -14,12 +14,14 @@ dist/
 # Local app/runtime logs
 *.log
 outputs/
+reports/
 
 # Local analysis helpers that depend on generated audit outputs
 build_problem_orders_tool.py
 build_special_template_queue.py
 
 # Business/order data and generated spreadsheets
+data/
 order_excels_dedup/
 *.xlsx
 *.xlsm
