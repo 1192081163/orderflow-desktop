@@ -13,6 +13,8 @@ order-extraction-tool-macos.dmg
 
 同一个版本重新运行 Release workflow 时，会覆盖 Release 里的同名文件。
 
+桌面软件启动后会联网检查 GitHub Release。发现新版或同版本被覆盖成新构建时，会提示打开当前系统对应的下载文件；检查失败不会影响订单提取。
+
 ### 发布新版本
 
 推送版本标签后会自动测试、打包并上传 Release：

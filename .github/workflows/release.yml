@@ -80,6 +80,23 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements-desktop.txt pyinstaller
 
+      - name: Generate build info
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $tagName = "${{ inputs.tag }}"
+          } else {
+            $tagName = "${{ github.ref_name }}"
+          }
+          $version = $tagName -replace '^v', ''
+          @(
+            "from __future__ import annotations",
+            "",
+            "APP_VERSION = `"$version`"",
+            "APP_RELEASE_TAG = `"$tagName`"",
+            "APP_BUILD_COMMIT = `"${{ github.sha }}`""
+          ) | Set-Content -Encoding UTF8 build_info.py
+
       - name: Build one-file executable
         shell: pwsh
         run: |
@@ -112,6 +129,23 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements-desktop.txt pyinstaller
+
+      - name: Generate build info
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG_NAME="${{ inputs.tag }}"
+          else
+            TAG_NAME="${{ github.ref_name }}"
+          fi
+          VERSION="${TAG_NAME#v}"
+          {
+            printf '%s\n' 'from __future__ import annotations'
+            printf '\n'
+            printf 'APP_VERSION = "%s"\n' "$VERSION"
+            printf 'APP_RELEASE_TAG = "%s"\n' "$TAG_NAME"
+            printf 'APP_BUILD_COMMIT = "%s"\n' "${{ github.sha }}"
+          } > build_info.py
 
       - name: Build app bundle
         run: python -m PyInstaller --clean --noconfirm order_extraction_tool.spec

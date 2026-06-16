@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, Signal, Slot
+from PySide6.QtCore import Qt, QThread, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices, QDragEnterEvent, QDropEvent
 from PySide6.QtWidgets import (
     QApplication,
@@ -22,9 +22,10 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PySide6.QtCore import QUrl
 
+from build_info import APP_BUILD_COMMIT, APP_RELEASE_TAG, APP_VERSION
 from desktop_runner import ExtractionResult, NoInputFilesError, run_extraction
+from updater import UpdateCheckInput, UpdateCheckResult, check_for_update
 
 
 class DropZone(QFrame):
@@ -118,10 +119,24 @@ class ExtractionWorker(QThread):
             self.logMessage.emit(f"[{index}/{total}] 失败 {path.name}")
 
 
+class UpdateCheckWorker(QThread):
+    updateCheckFinished = Signal(object, bool)
+
+    def __init__(self, current: UpdateCheckInput, manual: bool) -> None:
+        super().__init__()
+        self.current = current
+        self.manual = manual
+
+    def run(self) -> None:
+        result = check_for_update(self.current)
+        self.updateCheckFinished.emit(result, self.manual)
+
+
 class OrderExtractionWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.worker: ExtractionWorker | None = None
+        self.update_worker: UpdateCheckWorker | None = None
         self.last_result: ExtractionResult | None = None
 
         self.setWindowTitle("订单提取工具")
@@ -145,6 +160,12 @@ class OrderExtractionWindow(QMainWindow):
         title_group.addWidget(self.status_label)
         header.addLayout(title_group)
         header.addStretch(1)
+        self.version_label = QLabel(f"版本 {APP_RELEASE_TAG}")
+        self.version_label.setObjectName("versionText")
+        self.check_update_button = QPushButton("检查更新")
+        self.check_update_button.clicked.connect(self.check_for_updates_manual)
+        header.addWidget(self.version_label)
+        header.addWidget(self.check_update_button)
         layout.addLayout(header)
 
         self.drop_zone = DropZone()
@@ -205,6 +226,7 @@ class OrderExtractionWindow(QMainWindow):
         layout.addLayout(actions)
 
         self.apply_styles()
+        QTimer.singleShot(1500, self.check_for_updates_auto)
 
     def apply_styles(self) -> None:
         self.setStyleSheet(
@@ -219,7 +241,7 @@ class OrderExtractionWindow(QMainWindow):
                 font-size: 24px;
                 font-weight: 700;
             }
-            QLabel#statusText, QLabel#dropSubtitle {
+            QLabel#statusText, QLabel#dropSubtitle, QLabel#versionText {
                 color: #617080;
             }
             QFrame#dropZone {
@@ -280,6 +302,66 @@ class OrderExtractionWindow(QMainWindow):
             }
             """
         )
+
+    def current_update_input(self) -> UpdateCheckInput:
+        return UpdateCheckInput(current_version=APP_VERSION, current_commit=APP_BUILD_COMMIT)
+
+    @Slot()
+    def check_for_updates_manual(self) -> None:
+        self.start_update_check(manual=True)
+
+    @Slot()
+    def check_for_updates_auto(self) -> None:
+        self.start_update_check(manual=False)
+
+    def start_update_check(self, manual: bool) -> None:
+        if self.update_worker and self.update_worker.isRunning():
+            if manual:
+                QMessageBox.information(self, "正在检查", "正在检查更新，请稍后。")
+            return
+
+        if manual:
+            self.append_log("正在检查更新")
+        self.check_update_button.setEnabled(False)
+        self.update_worker = UpdateCheckWorker(self.current_update_input(), manual=manual)
+        self.update_worker.updateCheckFinished.connect(self.on_update_check_finished)
+        self.update_worker.finished.connect(lambda: self.check_update_button.setEnabled(True))
+        self.update_worker.start()
+
+    @Slot(object, bool)
+    def on_update_check_finished(self, result: UpdateCheckResult, manual: bool) -> None:
+        self.update_worker = None
+        if result.update_available:
+            self.prompt_for_update(result)
+            return
+        if result.error:
+            if manual:
+                QMessageBox.warning(self, "检查更新失败", result.error)
+                self.append_log(result.error)
+            return
+        if manual:
+            QMessageBox.information(self, "已是最新版本", f"当前版本 {APP_RELEASE_TAG} 已是最新。")
+            self.append_log("当前已是最新版本")
+
+    def prompt_for_update(self, result: UpdateCheckResult) -> None:
+        message = (
+            f"发现新版本 {result.latest_version}\n"
+            f"当前版本：{APP_RELEASE_TAG}\n"
+            f"下载文件：{result.asset_name}\n\n"
+            "是否打开下载链接？"
+        )
+        response = QMessageBox.question(
+            self,
+            "发现新版本",
+            message,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if response == QMessageBox.StandardButton.Yes:
+            target_url = result.download_url or result.release_url
+            if target_url:
+                QDesktopServices.openUrl(QUrl(target_url))
+        self.append_log(f"发现新版本 {result.latest_version}")
 
     @Slot()
     def choose_folder(self) -> None:
