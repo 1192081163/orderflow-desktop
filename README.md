@@ -7,8 +7,8 @@
 GitHub Release 会直接提供：
 
 ```text
-订单提取工具-windows.exe
-订单提取工具-macos.dmg
+order-extraction-tool-windows.exe
+order-extraction-tool-macos.dmg
 ```
 
 同一个版本重新运行 Release workflow 时，会覆盖 Release 里的同名文件。
@@ -38,11 +38,11 @@ build_windows.bat
 打包结果在：
 
 ```text
-订单提取工具-windows.exe
+order-extraction-tool-windows.exe
 dist\订单提取工具.exe
 ```
 
-发给别人时，可以直接发送 `订单提取工具-windows.exe`。
+发给别人时，可以直接发送 `order-extraction-tool-windows.exe`。
 
 ## macOS 本地打包
 
@@ -54,7 +54,7 @@ dist\订单提取工具.exe
 
 ```text
 dist/订单提取工具.app
-订单提取工具-macos.dmg
+order-extraction-tool-macos.dmg
 ```
 
 ## 本地运行

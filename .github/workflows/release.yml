@@ -17,6 +17,7 @@ permissions:
 env:
   PYTHON_VERSION: "3.12"
   APP_NAME: "订单提取工具"
+  ASSET_BASENAME: "order-extraction-tool"
 
 jobs:
   test:
@@ -83,13 +84,13 @@ jobs:
         shell: pwsh
         run: |
           python -m PyInstaller --clean --noconfirm --onefile --windowed --name "${{ env.APP_NAME }}" --add-data "rules;rules" desktop_app.py
-          Move-Item -Force "dist/${{ env.APP_NAME }}.exe" "${{ env.APP_NAME }}-windows.exe"
+          Move-Item -Force "dist/${{ env.APP_NAME }}.exe" "${{ env.ASSET_BASENAME }}-windows.exe"
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-exe
-          path: ${{ env.APP_NAME }}-windows.exe
+          path: ${{ env.ASSET_BASENAME }}-windows.exe
           if-no-files-found: error
 
   build-macos:
@@ -116,13 +117,13 @@ jobs:
         run: python -m PyInstaller --clean --noconfirm order_extraction_tool.spec
 
       - name: Build DMG
-        run: hdiutil create -volname "${{ env.APP_NAME }}" -srcfolder "dist/${{ env.APP_NAME }}.app" -ov -format UDZO "${{ env.APP_NAME }}-macos.dmg"
+        run: hdiutil create -volname "${{ env.APP_NAME }}" -srcfolder "dist/${{ env.APP_NAME }}.app" -ov -format UDZO "${{ env.ASSET_BASENAME }}-macos.dmg"
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
           name: macos-dmg
-          path: ${{ env.APP_NAME }}-macos.dmg
+          path: ${{ env.ASSET_BASENAME }}-macos.dmg
           if-no-files-found: error
 
   publish-release:
@@ -165,7 +166,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
+          for old_asset in "-windows.exe" "-macos.dmg"; do
+            gh release delete-asset "$TAG_NAME" "$old_asset" -y >/dev/null 2>&1 || true
+          done
           gh release upload "$TAG_NAME" \
-            "release-assets/windows-exe/${{ env.APP_NAME }}-windows.exe" \
-            "release-assets/macos-dmg/${{ env.APP_NAME }}-macos.dmg" \
+            "release-assets/windows-exe/${{ env.ASSET_BASENAME }}-windows.exe" \
+            "release-assets/macos-dmg/${{ env.ASSET_BASENAME }}-macos.dmg" \
             --clobber
