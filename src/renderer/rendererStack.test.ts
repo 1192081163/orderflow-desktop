@@ -33,9 +33,11 @@ describe("renderer React stack", () => {
     expect(tsConfigJson.include).toContain("src/**/*.tsx");
     expect(appSource).toContain("createRoot");
     expect(appSource).toContain("FluentProvider");
+    expect(appSource).toContain("<h1>订单提取</h1>");
+    expect(appSource).not.toContain("<h1>订单快读</h1>");
   });
 
-  test("renders one-week email list controls for selective extraction", async () => {
+  test("renders day email list controls for selective extraction", async () => {
     const [appSource, stylesSource, preloadSource, ipcSource] = await Promise.all([
       readFile(path.join(root, "src/renderer/app.tsx"), "utf8"),
       readFile(path.join(root, "src/renderer/styles.css"), "utf8"),
@@ -43,13 +45,61 @@ describe("renderer React stack", () => {
       readFile(path.join(root, "src/main/ipcHandlers.ts"), "utf8"),
     ]);
 
-    expect(appSource).toContain("近一周邮件");
+    expect(appSource).toContain("formatMailDayTitle");
+    expect(appSource).toContain("今日邮件");
+    expect(appSource).toContain("回到今天");
+    expect(appSource).toContain("上一天");
+    expect(appSource).toContain("下一天");
+    expect(appSource).toContain("保存邮箱后加载今日邮件");
+    expect(appSource).toContain("近一周扫描");
+    expect(appSource).toContain("非订单附件");
+    expect(appSource).toContain("提取选中 ${selectedExtractableUids.length} 封");
+    expect(appSource).toContain("失败原因");
+    expect(appSource).toContain("resultFailures");
+    expect(appSource).toContain("loadExtractedMessageUids");
+    expect(appSource).toContain("mergeExtractedMessageUids");
+    expect(appSource).toContain("window.localStorage");
+    expect(appSource).toContain("secondary-command-actions");
+    expect(appSource).toContain("quiet-command-button");
+    expect(appSource).toContain("local-extraction-actions");
+    expect(appSource).not.toContain("local-extraction-details");
+    expect(appSource).not.toContain("<details");
+    expect(appSource).not.toContain("<summary>本地提取</summary>");
+    expect(appSource).toContain("selectLocalInputs");
+    expect(appSource).toContain("onDrop={handleLocalDrop}");
+    expect(appSource).toContain("拖入 Excel 文件或文件夹");
+    expect(appSource).toContain("onClick={selectLocalInputs}");
+    expect(appSource.indexOf("刷新邮件")).toBeLessThan(appSource.indexOf("secondary-command-actions"));
+    expect(appSource.indexOf("onClick={selectLocalInputs}")).toBeGreaterThan(appSource.indexOf("primary-actions"));
+    expect(appSource).toContain("inferManual: true");
+    expect(appSource).not.toContain("自动标记需人工复核");
+    expect(appSource).not.toContain("setInferManual");
+    expect(appSource).not.toContain("文件夹包含子目录");
+    expect(appSource).not.toContain("setRecursive");
+    expect(appSource).not.toContain("选择 Excel 并提取");
+    expect(appSource).not.toContain("选择文件夹并提取");
+    expect(appSource).not.toContain("selectFiles");
+    expect(appSource).not.toContain("selectFolder");
+    expect(preloadSource).toContain("selectLocalInputs");
+    expect(preloadSource).toContain("dialog:select-local-inputs");
+    expect(preloadSource).not.toContain("selectFiles");
+    expect(preloadSource).not.toContain("selectFolder");
+    expect(ipcSource).toContain("dialog:select-local-inputs");
+    expect(ipcSource).not.toContain("dialog:select-files");
+    expect(ipcSource).not.toContain("dialog:select-folder");
+    expect(appSource).not.toContain('<div className="section-title">近一周邮件</div>');
+    expect(appSource).not.toContain("保存邮箱后加载近一周邮件");
+    expect(appSource).not.toContain("保存邮箱后会自动加载邮件");
+    expect(appSource).not.toContain("提取今日");
     expect(appSource).toContain("每 5 分钟自动刷新");
-    expect(appSource).toContain("提取今日");
-    expect(appSource).toContain("筛出");
+    expect(appSource).toContain("订单邮件");
     expect(appSource).toContain("订单附件");
     expect(appSource).toContain("messageUids");
     expect(appSource).toContain("listEmails");
+    expect(stylesSource).toContain(".failure-list");
+    expect(stylesSource).toContain(".secondary-command-actions");
+    expect(stylesSource).toContain(".local-extraction-actions");
+    expect(stylesSource).not.toContain(".local-extraction-details");
     expect(stylesSource).toContain(".mail-row.pending");
     expect(preloadSource).toContain("emails:list");
     expect(ipcSource).toContain("emails:list");

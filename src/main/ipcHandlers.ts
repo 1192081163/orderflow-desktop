@@ -27,22 +27,12 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle("updates:check", async () => checkForUpdates());
 
-  ipcMain.handle("dialog:select-files", async (event) => {
+  ipcMain.handle("dialog:select-local-inputs", async (event) => {
     const window = BrowserWindow.fromWebContents(event.sender);
     const options = {
-      title: "选择订单 Excel 文件",
-      properties: ["openFile", "multiSelections"],
+      title: "选择本地订单文件或文件夹",
+      properties: ["openFile", "openDirectory", "multiSelections"],
       filters: [{ name: "Excel", extensions: ["xlsx", "xlsm"] }],
-    } satisfies Electron.OpenDialogOptions;
-    const result = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
-    return result.canceled ? [] : result.filePaths;
-  });
-
-  ipcMain.handle("dialog:select-folder", async (event) => {
-    const window = BrowserWindow.fromWebContents(event.sender);
-    const options = {
-      title: "选择订单文件夹",
-      properties: ["openDirectory"],
     } satisfies Electron.OpenDialogOptions;
     const result = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
     return result.canceled ? [] : result.filePaths;

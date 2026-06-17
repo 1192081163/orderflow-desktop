@@ -1321,10 +1321,6 @@ function sheetHeaderText(worksheet: ExcelJS.Worksheet, headerRow: number, column
   return parts.join(" ").toUpperCase();
 }
 
-function isHardwareQuantityHeader(header: string): boolean {
-  return Boolean(sheet1DynaHardwareMultiplier(header)) || ["HINGE", "STRIKER", "DYNA", "BOLT", "PLATE"].some((token) => header.includes(token));
-}
-
 function sheet1DynaHardwareMultiplier(header: string): number | null {
   const tokens = new Set(header.replace(/[^A-Z0-9]+/g, " ").trim().split(/\s+/).filter(Boolean));
   if (tokens.has("CSK") && tokens.has("DTNA")) {

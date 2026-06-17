@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import { loadEmailSettings, saveEmailSettings } from "./settings.js";
 import {
+  collectOrderEmailAttachments,
   isExcelAttachmentName,
   isMessageWithinFetchWindow,
   saveEmailAttachments,
@@ -144,6 +145,28 @@ describe("email message summaries", () => {
     expect(summary.attachmentCount).toBe(1);
     expect(summary.excelAttachmentNames).toEqual(["order.xlsx"]);
     expect(summary.hasExcelAttachments).toBe(true);
+  });
+
+  test("collects order attachments through the shared classifier", async () => {
+    const attachments = await collectOrderEmailAttachments(
+      {
+        subject: "attachments",
+        date: new Date("2026-06-17T01:00:00.000Z"),
+        attachments: [
+          { filename: "order.xlsx", content: await makeOrderWorkbookBuffer() },
+          { filename: "weekly-report.xlsx", content: await makeReportWorkbookBuffer() },
+        ],
+      },
+      "303",
+    );
+
+    expect(attachments).toHaveLength(1);
+    expect(attachments[0]).toMatchObject({
+      filename: "order.xlsx",
+      messageSubject: "attachments",
+      messageUid: "303",
+    });
+    expect(attachments[0]?.messageDate?.toISOString()).toBe("2026-06-17T01:00:00.000Z");
   });
 });
 

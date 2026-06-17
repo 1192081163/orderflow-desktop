@@ -79,7 +79,7 @@ describe("extraction service", () => {
         authCode: " secret ",
       },
       {
-        listRecentEmailMessages: async (config, options) => ({
+      listRecentEmailMessages: async (_config, options) => ({
           scannedMessages: 2,
           messages: [
             {
@@ -118,7 +118,7 @@ describe("extraction service", () => {
       { paths: [" /tmp/input.xlsx "], recursive: true, inferManual: false },
       undefined,
       {
-        runOrderExtraction: async (paths, options) => ({
+      runOrderExtraction: async (paths, _options) => ({
           inputFiles: paths,
           rows: [],
           skippedFiles: [],

@@ -5,24 +5,30 @@ import {
   Button,
   Card,
   Checkbox,
-  Divider,
   Field,
   FluentProvider,
   Input,
   ProgressBar,
   webLightTheme,
 } from "@fluentui/react-components";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 import type { EmailExtractionResult } from "../core/extractionService.js";
 import type { OrderOrganizerApi } from "../preload/preload.cjs";
-import type { EmailMessageSummary, ExtractionResult, OutputPaths, ProgressEvent } from "../shared/types.js";
+import type { EmailMessageSummary, ExtractionFailure, ExtractionResult, OutputPaths, ProgressEvent } from "../shared/types.js";
 import {
   buildNewOrderEmailNotification,
   findNewPendingOrderMessages,
   mergeSeenMessageUids,
 } from "./mailNotifications.js";
+import {
+  canMoveToNextMailDay,
+  canMoveToPreviousMailDay,
+  filterMessagesForMailDay,
+  formatMailDayTitle,
+} from "./mailDateFilter.js";
+import { loadExtractedMessageUids, mergeExtractedMessageUids } from "./mailExtractionState.js";
 
 const bridgeMissing = !window.orderOrganizer && window.location.protocol === "file:";
 const api: OrderOrganizerApi = window.orderOrganizer ?? createPreviewApi();
@@ -32,24 +38,28 @@ const EMAIL_LIST_DAYS = 7;
 const AUTO_REFRESH_MS = 5 * 60 * 1000;
 const BRIDGE_MISSING_MESSAGE = "桌面接口加载失败，请重启应用。";
 
+interface MailListStats {
+  scannedMessages: number;
+  nonOrderExcelAttachmentCount?: number;
+}
+
 function App() {
   const [email, setEmail] = useState("");
   const [authCode, setAuthCode] = useState("");
-  const [recursive, setRecursive] = useState(false);
-  const [inferManual, setInferManual] = useState(true);
   const [settingsHidden, setSettingsHidden] = useState(false);
   const [busy, setBusy] = useState(false);
   const [mailLoading, setMailLoading] = useState(false);
-  const [status, setStatus] = useState(bridgeMissing ? BRIDGE_MISSING_MESSAGE : "本地处理企业微信邮箱附件和订单 Excel");
   const [summary, setSummary] = useState(bridgeMissing ? "桌面接口未连接" : "尚未开始");
-  const [mailStatus, setMailStatus] = useState("保存邮箱后加载近一周邮件");
-  const [lastRefreshLabel, setLastRefreshLabel] = useState("");
+  const [mailStatus, setMailStatus] = useState("保存邮箱后加载今日邮件");
   const [emailMessages, setEmailMessages] = useState<EmailMessageSummary[]>([]);
+  const [mailListStats, setMailListStats] = useState<MailListStats | null>(null);
+  const [mailDayOffset, setMailDayOffset] = useState(0);
   const [selectedMessageUids, setSelectedMessageUids] = useState<Set<string>>(() => new Set());
   const [extractedMessageUids, setExtractedMessageUids] = useState<Set<string>>(() => new Set());
   const [newMessageUids, setNewMessageUids] = useState<Set<string>>(() => new Set());
   const [progress, setProgress] = useState(0);
   const [latestOutputs, setLatestOutputs] = useState<OutputPaths | null>(null);
+  const [resultFailures, setResultFailures] = useState<ExtractionFailure[]>([]);
   const [logLines, setLogLines] = useState<string[]>([]);
   const logRef = useRef<HTMLPreElement | null>(null);
   const mailRefreshInFlight = useRef(false);
@@ -58,17 +68,31 @@ function App() {
   const mailboxKey = useRef("");
 
   const canUseEmail = Boolean(email.trim() && authCode.trim() && !bridgeMissing);
+  const visibleEmailMessages = useMemo(
+    () => filterMessagesForMailDay(emailMessages, mailDayOffset),
+    [emailMessages, mailDayOffset],
+  );
+  const mailDayTitle = formatMailDayTitle(mailDayOffset);
+  const canShowPreviousMailDay = canMoveToPreviousMailDay(mailDayOffset, EMAIL_LIST_DAYS);
+  const canShowNextMailDay = canMoveToNextMailDay(mailDayOffset);
   const selectedExtractableUids = useMemo(
     () =>
-      emailMessages
+      visibleEmailMessages
         .filter((message) => message.hasExcelAttachments && selectedMessageUids.has(message.uid))
         .map((message) => message.uid),
-    [emailMessages, selectedMessageUids],
+    [visibleEmailMessages, selectedMessageUids],
   );
   const pendingCount = useMemo(
-    () => emailMessages.filter((message) => message.hasExcelAttachments && !extractedMessageUids.has(message.uid)).length,
-    [emailMessages, extractedMessageUids],
+    () => visibleEmailMessages.filter((message) => message.hasExcelAttachments && !extractedMessageUids.has(message.uid)).length,
+    [visibleEmailMessages, extractedMessageUids],
   );
+  const visibleAttachmentCount = useMemo(
+    () => visibleEmailMessages.reduce((sum, message) => sum + message.attachmentCount, 0),
+    [visibleEmailMessages],
+  );
+  const visibleMailStatus = mailListStats
+    ? `${mailDayTitle}：订单邮件 ${visibleEmailMessages.length} 封，待提取 ${pendingCount} 封，订单附件 ${visibleAttachmentCount} 个；近一周扫描 ${mailListStats.scannedMessages} 封，非订单附件 ${mailListStats.nonOrderExcelAttachmentCount ?? 0} 个`
+    : mailStatus;
 
   const appendLog = useCallback((line: string) => {
     const stamp = new Date().toLocaleTimeString("zh-CN", { hour12: false });
@@ -81,20 +105,26 @@ function App() {
       const currentAuthCode = (override?.authCode ?? authCode).trim();
 
       if (!currentEmail || !currentAuthCode) {
-        setMailStatus("填写邮箱和授权码后可加载近一周邮件");
+        setMailListStats(null);
+        setMailStatus("填写邮箱和授权码后可加载今日邮件");
         return;
       }
       if (bridgeMissing || mailRefreshInFlight.current) {
         return;
       }
 
-      const currentMailboxKey = currentEmail.toLowerCase();
-      if (mailboxKey.current !== currentMailboxKey) {
-        mailboxKey.current = currentMailboxKey;
-        seenMessageUids.current = new Set();
-        hasLoadedMailbox.current = false;
-        setNewMessageUids(new Set());
-      }
+        const currentMailboxKey = currentEmail.toLowerCase();
+        const mailboxChanged = mailboxKey.current !== currentMailboxKey;
+        const activeExtractedMessageUids = mailboxChanged ? loadExtractedMessageUids(window.localStorage, currentEmail) : extractedMessageUids;
+        if (mailboxChanged) {
+          mailboxKey.current = currentMailboxKey;
+          seenMessageUids.current = new Set();
+          hasLoadedMailbox.current = false;
+          setNewMessageUids(new Set());
+          setExtractedMessageUids(activeExtractedMessageUids);
+          setMailListStats(null);
+          setMailDayOffset(0);
+        }
 
       mailRefreshInFlight.current = true;
       setMailLoading(true);
@@ -112,26 +142,30 @@ function App() {
         });
         const sortedMessages = sortMessages(result.messages);
         const validUids = new Set(sortedMessages.filter((message) => message.hasExcelAttachments).map((message) => message.uid));
-        const orderAttachmentCount = sortedMessages.reduce((sum, message) => sum + message.attachmentCount, 0);
+        const orderAttachmentCount = result.orderAttachmentCount ?? sortedMessages.reduce((sum, message) => sum + message.attachmentCount, 0);
+        const nonOrderExcelAttachmentCount = result.nonOrderExcelAttachmentCount ?? 0;
         const mailboxWasLoaded = hasLoadedMailbox.current;
-        const newPendingMessages = findNewPendingOrderMessages(sortedMessages, seenMessageUids.current, extractedMessageUids);
+        const newPendingMessages = findNewPendingOrderMessages(sortedMessages, seenMessageUids.current, activeExtractedMessageUids);
         const shouldAlertNewMessages = mailboxWasLoaded && newPendingMessages.length > 0;
-        const baseMailStatus = `近一周已扫描 ${result.scannedMessages} 封，筛出 ${sortedMessages.length} 封订单邮件，${orderAttachmentCount} 个订单附件`;
+        const baseMailStatus = `近一周扫描 ${result.scannedMessages} 封，订单邮件 ${sortedMessages.length} 封，订单附件 ${orderAttachmentCount} 个，非订单附件 ${nonOrderExcelAttachmentCount} 个`;
 
         seenMessageUids.current = mergeSeenMessageUids(seenMessageUids.current, sortedMessages);
         hasLoadedMailbox.current = true;
 
         setEmailMessages(sortedMessages);
-        setSelectedMessageUids((current) => new Set([...current].filter((uid) => validUids.has(uid))));
+        setMailListStats({
+          scannedMessages: result.scannedMessages,
+          nonOrderExcelAttachmentCount,
+        });
+        setSelectedMessageUids((current) => new Set([...current].filter((uid) => validUids.has(uid) && !activeExtractedMessageUids.has(uid))));
         setNewMessageUids((current) => {
-          const next = new Set([...current].filter((uid) => validUids.has(uid) && !extractedMessageUids.has(uid)));
+          const next = new Set([...current].filter((uid) => validUids.has(uid) && !activeExtractedMessageUids.has(uid)));
           if (shouldAlertNewMessages) {
             newPendingMessages.forEach((message) => next.add(message.uid));
           }
           return next;
         });
         setMailStatus(shouldAlertNewMessages ? `发现 ${newPendingMessages.length} 封新订单邮件，${baseMailStatus}` : baseMailStatus);
-        setLastRefreshLabel(`最后刷新 ${formatClock(new Date())}`);
         if (shouldAlertNewMessages) {
           const notification = buildNewOrderEmailNotification(newPendingMessages);
           appendLog(`发现新订单邮件：${newPendingMessages.map((message) => message.subject || "(无主题)").join(" / ")}`);
@@ -148,7 +182,7 @@ function App() {
             });
         }
         if (mode === "manual") {
-          appendLog(`邮件列表已刷新：${sortedMessages.length} 封，待提取 ${pendingCountFrom(sortedMessages, extractedMessageUids)} 封`);
+          appendLog(`邮件列表已刷新：${sortedMessages.length} 封，待提取 ${pendingCountFrom(sortedMessages, activeExtractedMessageUids)} 封`);
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -169,6 +203,9 @@ function App() {
     void api.loadSettings().then((settings) => {
       setEmail(settings.email);
       setAuthCode(settings.authCode);
+      if (settings.email.trim()) {
+        setExtractedMessageUids(loadExtractedMessageUids(window.localStorage, settings.email));
+      }
       setSettingsHidden(Boolean(settings.email && settings.authCode));
     });
     return removeProgressListener;
@@ -192,24 +229,21 @@ function App() {
     return () => window.clearInterval(timer);
   }, [canUseEmail, refreshEmails]);
 
-  async function runUiTask(message: string, task: () => Promise<void>): Promise<void> {
+  async function runUiTask(task: () => Promise<void>): Promise<void> {
     if (bridgeMissing) {
       appendLog(`失败：${BRIDGE_MISSING_MESSAGE}`);
       setSummary(BRIDGE_MISSING_MESSAGE);
-      setStatus("处理失败");
       return;
     }
 
     setBusy(true);
-    setStatus(message);
     try {
       await task();
-      setStatus("处理完成");
     } catch (error) {
       const messageText = error instanceof Error ? error.message : String(error);
       appendLog(`失败：${messageText}`);
+      setResultFailures([{ path: "处理任务", error: messageText }]);
       setSummary(messageText);
-      setStatus("处理失败");
     } finally {
       setBusy(false);
     }
@@ -219,12 +253,14 @@ function App() {
     setLatestOutputs(null);
     setProgress(0);
     setSummary("正在处理");
+    setResultFailures([]);
     setLogLines([]);
   }
 
   function renderExtractionResult(result: ExtractionResult): void {
     setLatestOutputs(result.outputs);
     setProgress(100);
+    setResultFailures(result.failures);
     setSummary(`成功 ${result.rows.length} 个订单，失败 ${result.failures.length} 个，跳过 ${result.skippedFiles.length} 个文件`);
     appendLog(`输出目录：${result.outputs.outputDir}`);
     result.failures.forEach((failure) => appendLog(`失败 ${failure.path}: ${failure.error}`));
@@ -236,7 +272,7 @@ function App() {
   }
 
   async function saveSettings(): Promise<void> {
-    await runUiTask("正在保存邮箱设置", async () => {
+    await runUiTask(async () => {
       const saved = await api.saveSettings({ email, authCode });
       setEmail(saved.email);
       setAuthCode(saved.authCode);
@@ -251,23 +287,11 @@ function App() {
       setSummary("请先勾选要提取的邮件。");
       return;
     }
-    await extractEmailMessages(selectedExtractableUids, "正在提取选中邮件");
+    await extractEmailMessages(selectedExtractableUids);
   }
 
-  async function extractTodayEmails(): Promise<void> {
-    const todayUids = emailMessages
-      .filter((message) => message.hasExcelAttachments && isTodayMessage(message) && !extractedMessageUids.has(message.uid))
-      .map((message) => message.uid);
-
-    if (todayUids.length === 0) {
-      setSummary("今日没有未提取的订单邮件。");
-      return;
-    }
-    await extractEmailMessages(todayUids, "正在提取今日邮件");
-  }
-
-  async function extractEmailMessages(messageUids: string[], taskLabel: string): Promise<void> {
-    await runUiTask(taskLabel, async () => {
+  async function extractEmailMessages(messageUids: string[]): Promise<void> {
+    await runUiTask(async () => {
       resetResult();
       appendLog(`已选择 ${messageUids.length} 封邮件`);
       const result = await api.extractEmail({
@@ -277,10 +301,11 @@ function App() {
         port: DEFAULT_IMAP_PORT,
         hours: EMAIL_LIST_DAYS * 24,
         messageUids,
-        inferManual,
+        inferManual: true,
       });
       renderEmailResult(result);
-      setExtractedMessageUids((current) => new Set([...current, ...messageUids]));
+      const nextExtractedMessageUids = mergeExtractedMessageUids(window.localStorage, email, messageUids);
+      setExtractedMessageUids(nextExtractedMessageUids);
       setSelectedMessageUids((current) => {
         const next = new Set(current);
         messageUids.forEach((uid) => next.delete(uid));
@@ -294,35 +319,46 @@ function App() {
     });
   }
 
-  async function extractLocal(paths: string[], scanRecursive: boolean): Promise<void> {
-    await runUiTask("正在提取本地订单", async () => {
+  async function extractLocal(paths: string[]): Promise<void> {
+    await runUiTask(async () => {
       resetResult();
       appendLog(`已选择 ${paths.length} 个输入`);
       const result = await api.extractLocal({
         paths,
-        recursive: scanRecursive,
-        inferManual,
+        recursive: false,
+        inferManual: true,
       });
       renderExtractionResult(result);
     });
   }
 
-  async function selectFiles(): Promise<void> {
-    const paths = await api.selectFiles();
+  async function selectLocalInputs(): Promise<void> {
+    const paths = await api.selectLocalInputs();
     if (paths.length > 0) {
-      await extractLocal(paths, false);
+      await extractLocal(paths);
     }
   }
 
-  async function selectFolder(): Promise<void> {
-    const paths = await api.selectFolder();
-    if (paths.length > 0) {
-      await extractLocal(paths, recursive);
+  function handleLocalDragOver(event: DragEvent<HTMLDivElement>): void {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  }
+
+  function handleLocalDrop(event: DragEvent<HTMLDivElement>): void {
+    event.preventDefault();
+    if (busy || bridgeMissing) {
+      return;
     }
+    const paths = localPathsFromDrop(event);
+    if (paths.length > 0) {
+      void extractLocal(paths);
+      return;
+    }
+    setSummary("请拖入本地 Excel 文件或文件夹。");
   }
 
   async function checkUpdates(): Promise<void> {
-    await runUiTask("正在检查更新", async () => {
+    await runUiTask(async () => {
       const result = await api.checkUpdates();
       if (result.updateAvailable && result.downloadUrl) {
         setSummary(`发现新版本 ${result.latestVersion ?? ""}：${result.assetName ?? "安装包"}`);
@@ -352,11 +388,23 @@ function App() {
   function selectPendingMessages(): void {
     setSelectedMessageUids(
       new Set(
-        emailMessages
+        visibleEmailMessages
           .filter((message) => message.hasExcelAttachments && !extractedMessageUids.has(message.uid))
           .map((message) => message.uid),
       ),
     );
+  }
+
+  function showPreviousMailDay(): void {
+    setMailDayOffset((current) => Math.min(current + 1, EMAIL_LIST_DAYS - 1));
+  }
+
+  function showNextMailDay(): void {
+    setMailDayOffset((current) => Math.max(current - 1, 0));
+  }
+
+  function showTodayMailDay(): void {
+    setMailDayOffset(0);
   }
 
   function openLatest(key: keyof OutputPaths): void {
@@ -371,7 +419,7 @@ function App() {
         <Card className="mail-command-card">
           <div className="mail-command-layout">
             <div className="mail-command-status">
-              <h1>订单快读</h1>
+              <h1>订单提取</h1>
               <div className="connection-row">
                 <Badge className="connection-badge" appearance="tint" color={email && authCode ? "success" : "subtle"}>
                   {email && authCode ? "已连接" : "未连接"}
@@ -383,15 +431,20 @@ function App() {
               <Button appearance="primary" disabled={busy || mailLoading || !canUseEmail} onClick={() => void refreshEmails("manual")}>
                 刷新邮件
               </Button>
-              <Button disabled={busy || mailLoading || !canUseEmail} onClick={extractTodayEmails}>
-                提取今日
-              </Button>
-              <Button disabled={busy || bridgeMissing} onClick={checkUpdates}>
-                检查更新
-              </Button>
-              <Button disabled={busy || bridgeMissing} onClick={() => setSettingsHidden(false)}>
-                修改邮箱设置
-              </Button>
+              <div className="secondary-command-actions" aria-label="次要操作">
+                <Button size="small" appearance="subtle" className="quiet-command-button" disabled={busy || bridgeMissing} onClick={checkUpdates}>
+                  检查更新
+                </Button>
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  className="quiet-command-button"
+                  disabled={busy || bridgeMissing}
+                  onClick={() => setSettingsHidden(false)}
+                >
+                  修改邮箱设置
+                </Button>
+              </div>
             </div>
           </div>
         </Card>
@@ -399,8 +452,35 @@ function App() {
         <div className="workspace">
           <Card className="surface mail-list-panel">
             <div className="section-heading compact-heading">
-              <div>
-                <div className="section-title">近一周邮件</div>
+              <div className="mail-heading-copy">
+                <div className="mail-title-row">
+                  <div className="section-title">{mailDayTitle}</div>
+                  <div className="mail-day-controls" aria-label="邮件日期切换">
+                    <Button
+                      size="small"
+                      className="mail-day-arrow"
+                      aria-label="上一天"
+                      title="上一天"
+                      disabled={busy || mailLoading || !canShowPreviousMailDay}
+                      onClick={showPreviousMailDay}
+                    >
+                      ←
+                    </Button>
+                    <Button
+                      size="small"
+                      className="mail-day-arrow"
+                      aria-label="下一天"
+                      title="下一天"
+                      disabled={busy || mailLoading || !canShowNextMailDay}
+                      onClick={showNextMailDay}
+                    >
+                      →
+                    </Button>
+                    <Button size="small" disabled={busy || mailLoading || mailDayOffset === 0} onClick={showTodayMailDay}>
+                      回到今天
+                    </Button>
+                  </div>
+                </div>
                 <div className="section-subtitle">按发生时间排序，每 5 分钟自动刷新。</div>
               </div>
               <Badge appearance="tint" color={pendingCount > 0 ? "warning" : "success"}>
@@ -408,9 +488,9 @@ function App() {
               </Badge>
             </div>
             <div className="mail-toolbar">
-              <span className="mail-status">{mailLoading ? "正在刷新..." : mailStatus}</span>
+              <span className="mail-status">{mailLoading ? "正在刷新..." : visibleMailStatus}</span>
               <div className="mail-toolbar-actions">
-                <Button size="small" disabled={busy || mailLoading || emailMessages.length === 0} onClick={selectPendingMessages}>
+                <Button size="small" disabled={busy || mailLoading || pendingCount === 0} onClick={selectPendingMessages}>
                   全选待提取
                 </Button>
                 <Button size="small" disabled={busy || selectedMessageUids.size === 0} onClick={() => setSelectedMessageUids(new Set())}>
@@ -418,12 +498,17 @@ function App() {
                 </Button>
               </div>
             </div>
-            <div className="mail-refresh-note">{lastRefreshLabel || "保存邮箱后会自动加载邮件"}</div>
-            <div className="mail-list" aria-label="近一周邮件列表">
-              {emailMessages.length === 0 ? (
-                <div className="empty-mail-list">{canUseEmail ? "暂无近一周订单邮件，点击刷新邮件重试。" : "填写邮箱和授权码后显示邮件。"}</div>
+            <div className="mail-list" aria-label={`${mailDayTitle}列表`}>
+              {visibleEmailMessages.length === 0 ? (
+                <div className="empty-mail-list">
+                  {canUseEmail
+                    ? emailMessages.length === 0
+                      ? "暂无近一周订单邮件，点击刷新邮件重试。"
+                      : `${mailDayTitle}暂无订单邮件。`
+                    : "填写邮箱和授权码后显示邮件。"}
+                </div>
               ) : (
-                emailMessages.map((message) => {
+                visibleEmailMessages.map((message) => {
                   const extracted = extractedMessageUids.has(message.uid);
                   const pending = message.hasExcelAttachments && !extracted;
                   const newlyArrived = pending && newMessageUids.has(message.uid);
@@ -511,19 +596,14 @@ function App() {
                   disabled={busy || selectedExtractableUids.length === 0}
                   onClick={extractSelectedEmails}
                 >
-                  提取选中邮件
-                </Button>
-                <Button className="wide-button" disabled={busy || bridgeMissing} onClick={selectFiles}>
-                  选择 Excel 并提取
-                </Button>
-                <Button className="wide-button" disabled={busy || bridgeMissing} onClick={selectFolder}>
-                  选择文件夹并提取
+                  {selectedExtractableUids.length > 0 ? `提取选中 ${selectedExtractableUids.length} 封` : "提取选中邮件"}
                 </Button>
               </div>
-              <Divider />
-              <div className="options-grid">
-                <Checkbox checked={inferManual} label="自动标记需人工复核" onChange={(_, data) => setInferManual(Boolean(data.checked))} />
-                <Checkbox checked={recursive} label="文件夹包含子目录" onChange={(_, data) => setRecursive(Boolean(data.checked))} />
+              <div className="local-extraction-actions" onDragOver={handleLocalDragOver} onDrop={handleLocalDrop}>
+                <Button className="wide-button" disabled={busy || bridgeMissing} onClick={selectLocalInputs}>
+                  本地提取
+                </Button>
+                <div className="local-drop-hint">拖入 Excel 文件或文件夹</div>
               </div>
             </Card>
 
@@ -534,6 +614,17 @@ function App() {
                   <div id="summaryText" className="summary">
                     {summary}
                   </div>
+                  {resultFailures.length > 0 && (
+                    <div className="failure-list">
+                      <div className="failure-title">失败原因</div>
+                      {resultFailures.map((failure) => (
+                        <div className="failure-item" key={`${failure.path}:${failure.error}`}>
+                          <span className="failure-path">{failure.path}</span>
+                          <span className="failure-error">{failure.error}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 {latestOutputs && (
                   <div id="outputButtons" className="output-buttons">
@@ -616,20 +707,11 @@ function pendingCountFrom(messages: EmailMessageSummary[], extractedUids: Set<st
   return messages.filter((message) => message.hasExcelAttachments && !extractedUids.has(message.uid)).length;
 }
 
-function isTodayMessage(message: EmailMessageSummary): boolean {
-  if (!message.date) {
-    return false;
-  }
-  const messageDate = new Date(message.date);
-  if (Number.isNaN(messageDate.getTime())) {
-    return false;
-  }
-  const now = new Date();
-  return (
-    messageDate.getFullYear() === now.getFullYear() &&
-    messageDate.getMonth() === now.getMonth() &&
-    messageDate.getDate() === now.getDate()
-  );
+function localPathsFromDrop(event: DragEvent<HTMLDivElement>): string[] {
+  const paths = Array.from(event.dataTransfer.files)
+    .map((file) => (file as File & { path?: string }).path ?? "")
+    .filter((path) => path.trim().length > 0);
+  return [...new Set(paths)];
 }
 
 function formatMessageDate(date: string | undefined): string {
@@ -647,10 +729,6 @@ function formatMessageDate(date: string | undefined): string {
     minute: "2-digit",
     hour12: false,
   });
-}
-
-function formatClock(date: Date): string {
-  return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
 function createPreviewApi(): OrderOrganizerApi {
@@ -671,11 +749,12 @@ function createPreviewApi(): OrderOrganizerApi {
   return {
     loadSettings: async () => ({ email: "", authCode: "" }),
     saveSettings: async (settings) => ({ email: settings.email.trim(), authCode: settings.authCode }),
-    selectFiles: async () => ["/preview/orders/order.xlsx"],
-    selectFolder: async () => ["/preview/orders"],
+    selectLocalInputs: async () => ["/preview/orders/order.xlsx"],
     listEmails: async () => ({
       days: EMAIL_LIST_DAYS,
       scannedMessages: 3,
+      orderAttachmentCount: 2,
+      nonOrderExcelAttachmentCount: 0,
       messages: [
         {
           uid: "preview-3",

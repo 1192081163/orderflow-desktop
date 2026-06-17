@@ -47,7 +47,7 @@ interface ParsedEmailAttachmentLike {
   content?: unknown;
 }
 
-interface ParsedEmailLike {
+export interface ParsedEmailLike {
   subject?: string | false | null;
   date?: Date;
   from?: { text?: string } | null;
@@ -118,6 +118,8 @@ export async function listRecentEmailMessages(
   const client = createClient(config);
   const messages: EmailMessageSummary[] = [];
   let scannedMessages = 0;
+  let orderAttachmentCount = 0;
+  let nonOrderExcelAttachmentCount = 0;
 
   await client.connect();
   try {
@@ -133,11 +135,14 @@ export async function listRecentEmailMessages(
           continue;
         }
 
-        scannedMessages += 1;
-        const summary = await summarizeParsedOrderEmail(parsed, String(message.uid ?? ""));
-        if (summary.hasExcelAttachments) {
-          messages.push(summary);
-        }
+      scannedMessages += 1;
+      const excelSummary = summarizeParsedEmail(parsed, String(message.uid ?? ""));
+      const summary = await summarizeParsedOrderEmail(parsed, String(message.uid ?? ""));
+      orderAttachmentCount += summary.attachmentCount;
+      nonOrderExcelAttachmentCount += Math.max(0, excelSummary.attachmentCount - summary.attachmentCount);
+      if (summary.hasExcelAttachments) {
+        messages.push(summary);
+      }
       }
     } finally {
       lock.release();
@@ -150,6 +155,8 @@ export async function listRecentEmailMessages(
     messages: sortEmailMessagesByDateDesc(messages),
     scannedMessages,
     days,
+    orderAttachmentCount,
+    nonOrderExcelAttachmentCount,
   };
 }
 
@@ -166,7 +173,20 @@ export async function summarizeParsedOrderEmail(
   uid: string,
   filter: OrderAttachmentFilter = isOrderEmailAttachment,
 ): Promise<EmailMessageSummary> {
-  const orderAttachmentNames: string[] = [];
+  const orderAttachments = await collectOrderEmailAttachments(parsed, uid, filter);
+  return emailSummaryFromAttachmentNames(
+    parsed,
+    uid,
+    orderAttachments.map((attachment) => attachment.filename),
+  );
+}
+
+export async function collectOrderEmailAttachments(
+  parsed: ParsedEmailLike,
+  uid: string,
+  filter: OrderAttachmentFilter = isOrderEmailAttachment,
+): Promise<EmailAttachment[]> {
+  const orderAttachments: EmailAttachment[] = [];
 
   for (const attachment of parsed.attachments ?? []) {
     const filename = attachment.filename?.trim() ?? "";
@@ -176,11 +196,17 @@ export async function summarizeParsedOrderEmail(
 
     const content = toBuffer(attachment.content);
     if (await filter({ filename, content })) {
-      orderAttachmentNames.push(filename);
+      orderAttachments.push({
+        filename,
+        content,
+        messageSubject: parsed.subject || "",
+        messageDate: parsed.date,
+        messageUid: uid,
+      });
     }
   }
 
-  return emailSummaryFromAttachmentNames(parsed, uid, orderAttachmentNames);
+  return orderAttachments;
 }
 
 export function sortEmailMessagesByDateDesc(messages: EmailMessageSummary[]): EmailMessageSummary[] {
@@ -221,24 +247,7 @@ async function fetchExcelAttachments(config: ImapConfig, options: EmailFetchOpti
         }
 
         scannedMessages += 1;
-        for (const attachment of parsed.attachments) {
-          if (!attachment.filename || !isExcelAttachmentName(attachment.filename)) {
-            continue;
-          }
-
-          const content = toBuffer(attachment.content);
-          if (!(await isOrderEmailAttachment({ filename: attachment.filename, content }))) {
-            continue;
-          }
-
-          attachments.push({
-            filename: attachment.filename,
-            content,
-            messageSubject: parsed.subject ?? "",
-            messageDate: parsed.date,
-            messageUid: uid,
-          });
-        }
+        attachments.push(...(await collectOrderEmailAttachments(parsed, uid)));
       }
     } finally {
       lock.release();

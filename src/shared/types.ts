@@ -85,6 +85,8 @@ export interface EmailListResult {
   messages: EmailMessageSummary[];
   scannedMessages: number;
   days: number;
+  orderAttachmentCount?: number;
+  nonOrderExcelAttachmentCount?: number;
 }
 
 export interface NewOrderEmailNotification {

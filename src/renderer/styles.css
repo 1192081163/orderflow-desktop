@@ -98,8 +98,19 @@ body {
 .mail-command-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.secondary-command-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.quiet-command-button {
+  color: var(--app-muted);
 }
 
 .workspace {
@@ -128,6 +139,27 @@ body {
 
 .compact-heading {
   margin-bottom: 8px;
+}
+
+.mail-heading-copy {
+  min-width: 0;
+}
+
+.mail-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mail-day-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mail-day-arrow {
+  min-width: 32px;
 }
 
 .section-title {
@@ -168,13 +200,6 @@ body {
   display: flex;
   flex: 0 0 auto;
   gap: 6px;
-}
-
-.mail-refresh-note {
-  min-height: 18px;
-  margin: 6px 0 8px;
-  color: var(--app-muted);
-  font-size: 12px;
 }
 
 .mail-list {
@@ -300,14 +325,20 @@ body {
   white-space: nowrap;
 }
 
-.action-card .fui-Divider {
-  margin: 12px 0 10px;
+.local-extraction-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px dashed #d1d1d1;
+  border-radius: 6px;
+  background: #fff;
 }
 
-.options-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 8px;
+.local-drop-hint {
+  color: var(--app-muted);
+  font-size: 12px;
+  text-align: center;
 }
 
 .result-panel {
@@ -319,6 +350,37 @@ body {
 .result-header {
   display: grid;
   gap: 10px;
+}
+
+.failure-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid #f1b4b7;
+  border-radius: 6px;
+  background: #fff7f7;
+  color: #6e1b1f;
+  font-size: 12px;
+}
+
+.failure-title {
+  font-weight: 600;
+}
+
+.failure-item {
+  display: grid;
+  gap: 2px;
+}
+
+.failure-path {
+  color: #3b3b3b;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.failure-error {
+  overflow-wrap: anywhere;
 }
 
 .output-buttons {
@@ -392,8 +454,16 @@ body {
   .mail-command-actions,
   .mail-toolbar-actions {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
     justify-content: stretch;
+  }
+
+  .secondary-command-actions {
+    justify-content: stretch;
+  }
+
+  .secondary-command-actions .fui-Button {
+    flex: 1 1 0;
   }
 
   .mail-command-actions .fui-Button,
