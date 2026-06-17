@@ -361,12 +361,19 @@ function App() {
     await runUiTask(async () => {
       const result = await api.checkUpdates();
       if (result.updateAvailable && result.downloadUrl) {
-        setSummary(`发现新版本 ${result.latestVersion ?? ""}：${result.assetName ?? "安装包"}`);
-        appendLog(`下载地址：${result.downloadUrl}`);
+        setSummary(`发现新版本 ${result.latestVersion ?? ""}，正在下载安装包。`);
+        appendLog(`正在下载安装包：${result.assetName ?? "安装包"}`);
+        const installerPath = await api.downloadAndInstallUpdate(result);
+        appendLog(`安装包已启动：${installerPath}`);
+        setSummary("安装包已启动，正在关闭当前版本。");
         return;
       }
       if (result.reason === "error") {
         setSummary(`检查更新失败：${result.error ?? "未知错误"}`);
+        return;
+      }
+      if (result.reason === "missing_asset") {
+        setSummary(result.error ?? "未找到可下载的 Windows 安装包。");
         return;
       }
       setSummary("当前已经是最新版本。");
@@ -801,6 +808,7 @@ function createPreviewApi(): OrderOrganizerApi {
       currentVersion: "preview",
       reason: "current",
     }),
+    downloadAndInstallUpdate: async () => "/preview/downloads/order-organizer-assistant-windows.exe",
     openPath: async () => undefined,
     onProgress: () => () => undefined,
   };

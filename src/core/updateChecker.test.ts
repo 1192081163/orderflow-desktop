@@ -1,9 +1,24 @@
-import { describe, expect, test } from "vitest";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
-import { checkForUpdates, updateInfoFromReleasePayload, WINDOWS_ASSET_NAME } from "./updateChecker.js";
+import { afterEach, describe, expect, test } from "vitest";
+
+import {
+  checkForUpdates,
+  downloadUpdateInstaller,
+  updateInfoFromReleasePayload,
+  WINDOWS_ASSET_NAME,
+} from "./updateChecker.js";
+
+const tempDirs: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+});
 
 describe("update checker", () => {
-  test("detects a newer Windows release asset", () => {
+  test("detects newer Windows release asset", () => {
     const result = updateInfoFromReleasePayload(
       {
         tag_name: "v1.2.0",
@@ -29,6 +44,32 @@ describe("update checker", () => {
     expect(result.reason).toBe("current");
   });
 
+  test("reports current when latest release tag matches the packaged build tag", () => {
+    const result = updateInfoFromReleasePayload(
+      {
+        tag_name: "build-123",
+        assets: [{ name: WINDOWS_ASSET_NAME, browser_download_url: "https://download.example/app.exe" }],
+      },
+      { currentVersion: "1.0.0", currentReleaseTag: "build-123" },
+    );
+
+    expect(result.updateAvailable).toBe(false);
+    expect(result.reason).toBe("current");
+  });
+
+  test("detects newer build release tag for packaged builds", () => {
+    const result = updateInfoFromReleasePayload(
+      {
+        tag_name: "build-124",
+        assets: [{ name: WINDOWS_ASSET_NAME, browser_download_url: "https://download.example/app.exe" }],
+      },
+      { currentVersion: "1.0.0", currentReleaseTag: "build-123" },
+    );
+
+    expect(result.updateAvailable).toBe(true);
+    expect(result.latestVersion).toBe("build-124");
+  });
+
   test("reports missing asset for newer releases without installer", () => {
     const result = updateInfoFromReleasePayload({ tag_name: "v2.0.0", assets: [] }, "1.0.0");
 
@@ -37,7 +78,7 @@ describe("update checker", () => {
     expect(result.error).toContain(WINDOWS_ASSET_NAME);
   });
 
-  test("returns an error result when the release request fails", async () => {
+  test("returns an error result when release request fails", async () => {
     const result = await checkForUpdates(async () => {
       throw new Error("network down");
     });
@@ -45,5 +86,49 @@ describe("update checker", () => {
     expect(result.updateAvailable).toBe(false);
     expect(result.reason).toBe("error");
     expect(result.error).toContain("network down");
+  });
+
+  test("downloads update installer to a unique local path", async () => {
+    const downloadDir = await mkdtemp(path.join(os.tmpdir(), "r004-update-"));
+    tempDirs.push(downloadDir);
+    await writeFile(path.join(downloadDir, WINDOWS_ASSET_NAME), "old installer");
+
+    const installerPath = await downloadUpdateInstaller(
+      {
+        updateAvailable: true,
+        currentVersion: "1.0.0",
+        latestVersion: "1.2.0",
+        assetName: WINDOWS_ASSET_NAME,
+        downloadUrl: "https://download.example/app.exe",
+        reason: "newer_version",
+      },
+      downloadDir,
+      async (url, init) => {
+        expect(url).toBe("https://download.example/app.exe");
+        expect(JSON.stringify(init?.headers)).toContain("order-organizer-assistant/");
+        return new Response(new TextEncoder().encode("new installer"));
+      },
+    );
+
+    expect(path.basename(installerPath)).toBe("order-organizer-assistant-windows-1.exe");
+    expect(await readFile(installerPath, "utf8")).toBe("new installer");
+    await expect(access(`${installerPath}.download`)).rejects.toBeTruthy();
+  });
+
+  test("rejects installer download when release has no downloadable asset", async () => {
+    const downloadDir = await mkdtemp(path.join(os.tmpdir(), "r004-update-"));
+    tempDirs.push(downloadDir);
+
+    await expect(
+      downloadUpdateInstaller(
+        {
+          updateAvailable: false,
+          currentVersion: "1.0.0",
+          reason: "missing_asset",
+          error: `未找到下载文件：${WINDOWS_ASSET_NAME}`,
+        },
+        downloadDir,
+      ),
+    ).rejects.toThrow("更新文件不存在");
   });
 });

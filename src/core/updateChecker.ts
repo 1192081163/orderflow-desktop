@@ -1,6 +1,9 @@
+import { access, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
+import path from "node:path";
 
 import type { UpdateCheckResult } from "../shared/types.js";
+import { CURRENT_RELEASE_TAG } from "./buildInfo.js";
 
 const require = createRequire(import.meta.url);
 const packageJson = require("../../package.json") as { version?: string };
@@ -19,15 +22,27 @@ interface ReleasePayload {
   assets?: unknown;
 }
 
+type UpdateComparisonOptions =
+  | string
+  | {
+      currentVersion?: string;
+      currentReleaseTag?: string;
+    };
+
 export function updateInfoFromReleasePayload(
   payload: ReleasePayload,
-  currentVersion = packageJson.version ?? "1.0.0",
+  options: UpdateComparisonOptions = {
+    currentVersion: packageJson.version ?? "1.0.0",
+    currentReleaseTag: CURRENT_RELEASE_TAG,
+  },
 ): UpdateCheckResult {
-  const latestVersion = String(payload.tag_name ?? "").trim().replace(/^v/i, "");
+  const { currentVersion, currentReleaseTag } = normalizeUpdateOptions(options);
+  const latestTag = String(payload.tag_name ?? "").trim();
+  const latestVersion = latestTag.replace(/^v/i, "");
   const releaseUrl = String(payload.html_url ?? "");
   const asset = selectWindowsAsset(payload.assets);
 
-  if (!latestVersion || compareVersions(currentVersion, latestVersion) >= 0) {
+  if (!isNewerRelease(latestTag, latestVersion, currentReleaseTag, currentVersion)) {
     return {
       updateAvailable: false,
       currentVersion,
@@ -68,7 +83,8 @@ export async function checkForUpdates(fetchImpl = fetch): Promise<UpdateCheckRes
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
-    return updateInfoFromReleasePayload((await response.json()) as ReleasePayload, currentVersion);
+    const payload = (await response.json()) as ReleasePayload;
+    return updateInfoFromReleasePayload(payload, { currentVersion, currentReleaseTag: CURRENT_RELEASE_TAG });
   } catch (error) {
     return {
       updateAvailable: false,
@@ -79,18 +95,138 @@ export async function checkForUpdates(fetchImpl = fetch): Promise<UpdateCheckRes
   }
 }
 
+export async function downloadUpdateInstaller(
+  update: UpdateCheckResult,
+  downloadDir: string,
+  fetchImpl = fetch,
+): Promise<string> {
+  if (!update.updateAvailable || !update.downloadUrl || !update.assetName) {
+    throw new Error("更新文件不存在，请稍后重试或手动下载安装包。");
+  }
+
+  await mkdir(downloadDir, { recursive: true });
+  const installerPath = await uniquePath(path.join(downloadDir, update.assetName));
+  const tempPath = `${installerPath}.download`;
+  const currentVersion = packageJson.version ?? "1.0.0";
+
+  const response = await fetchImpl(update.downloadUrl, {
+    headers: { "User-Agent": `order-organizer-assistant/${currentVersion}` },
+  });
+  if (!response.ok || !response.body) {
+    throw new Error(`安装包下载失败：HTTP ${response.status}`);
+  }
+
+  try {
+    await writeFile(tempPath, Buffer.from(await response.arrayBuffer()));
+    await rename(tempPath, installerPath);
+  } finally {
+    await rm(tempPath, { force: true });
+  }
+
+  return installerPath;
+}
+
+function normalizeUpdateOptions(options: UpdateComparisonOptions): { currentVersion: string; currentReleaseTag: string } {
+  if (typeof options === "string") {
+    return { currentVersion: options, currentReleaseTag: "" };
+  }
+  return {
+    currentVersion: options.currentVersion ?? packageJson.version ?? "1.0.0",
+    currentReleaseTag: options.currentReleaseTag ?? CURRENT_RELEASE_TAG,
+  };
+}
+
 function selectWindowsAsset(assets: unknown): ReleaseAsset | null {
   if (!Array.isArray(assets)) {
     return null;
   }
   return (
-    assets.find((asset): asset is ReleaseAsset => {
-      if (!asset || typeof asset !== "object") {
-        return false;
-      }
-      return String((asset as ReleaseAsset).name ?? "") === WINDOWS_ASSET_NAME;
+    (assets as ReleaseAsset[]).find((asset) => {
+      const name = String(asset.name ?? "");
+      return name === WINDOWS_ASSET_NAME || name.toLowerCase().endsWith(".exe");
     }) ?? null
   );
+}
+
+async function uniquePath(filePath: string): Promise<string> {
+  if (!(await pathExists(filePath))) {
+    return filePath;
+  }
+
+  const parsed = path.parse(filePath);
+  for (let index = 1; index < 100; index += 1) {
+    const candidate = path.join(parsed.dir, `${parsed.name}-${index}${parsed.ext}`);
+    if (!(await pathExists(candidate))) {
+      return candidate;
+    }
+  }
+
+  throw new Error("下载目录中存在过多同名安装包。");
+}
+
+async function pathExists(filePath: string): Promise<boolean> {
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isNewerRelease(
+  latestTag: string,
+  latestVersion: string,
+  currentReleaseTag: string,
+  currentVersion: string,
+): boolean {
+  if (!latestTag) {
+    return false;
+  }
+
+  if (currentReleaseTag === "dev") {
+    return false;
+  }
+
+  if (currentReleaseTag) {
+    if (latestTag === currentReleaseTag) {
+      return false;
+    }
+
+    const latestBuild = parseBuildTag(latestTag);
+    const currentBuild = parseBuildTag(currentReleaseTag);
+    if (latestBuild !== null && currentBuild !== null) {
+      return latestBuild > currentBuild;
+    }
+
+    const latestSemver = parseSemver(latestTag);
+    const currentSemver = parseSemver(currentReleaseTag) ?? parseSemver(currentVersion);
+    if (latestSemver && currentSemver) {
+      return compareSemver(latestSemver, currentSemver) > 0;
+    }
+
+    return latestTag !== currentReleaseTag;
+  }
+
+  return compareVersions(currentVersion, latestVersion) < 0;
+}
+
+function parseBuildTag(tag: string): number | null {
+  const match = tag.trim().match(/^build-(\d+)$/);
+  return match ? Number(match[1]) : null;
+}
+
+function parseSemver(tag: string): [number, number, number] | null {
+  const match = tag.trim().match(/^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
+  return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
+}
+
+function compareSemver(left: [number, number, number], right: [number, number, number]): number {
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return left[index] - right[index];
+    }
+  }
+  return 0;
 }
 
 function compareVersions(left: string, right: string): number {

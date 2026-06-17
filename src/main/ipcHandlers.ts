@@ -1,4 +1,4 @@
-import { BrowserWindow, Notification, dialog, ipcMain, shell } from "electron";
+import { BrowserWindow, Notification, app, dialog, ipcMain, shell } from "electron";
 
 import {
   extractEmailOrders,
@@ -8,8 +8,8 @@ import {
   type EmailListRequest,
 } from "../core/extractionService.js";
 import { loadEmailSettings, saveEmailSettings } from "../core/settings.js";
-import { checkForUpdates } from "../core/updateChecker.js";
-import type { EmailSettings, NewOrderEmailNotification, ProgressEvent } from "../shared/types.js";
+import { checkForUpdates, downloadUpdateInstaller } from "../core/updateChecker.js";
+import type { EmailSettings, NewOrderEmailNotification, ProgressEvent, UpdateCheckResult } from "../shared/types.js";
 
 interface LocalExtractionPayload {
   paths?: string[];
@@ -26,6 +26,20 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle("updates:check", async () => checkForUpdates());
+
+  ipcMain.handle("updates:download-and-install", async (_event, update: UpdateCheckResult): Promise<string> => {
+    if (process.platform !== "win32") {
+      throw new Error("自动安装仅支持 Windows 安装包，请在 Windows 电脑上更新。");
+    }
+
+    const installerPath = await downloadUpdateInstaller(update, app.getPath("downloads"));
+    const errorMessage = await shell.openPath(installerPath);
+    if (errorMessage) {
+      throw new Error(errorMessage);
+    }
+    setTimeout(() => app.quit(), 1000);
+    return installerPath;
+  });
 
   ipcMain.handle("dialog:select-local-inputs", async (event) => {
     const window = BrowserWindow.fromWebContents(event.sender);
