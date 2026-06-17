@@ -361,11 +361,11 @@ function App() {
     await runUiTask(async () => {
       const result = await api.checkUpdates();
       if (result.updateAvailable && result.downloadUrl) {
-        setSummary(`发现新版本 ${result.latestVersion ?? ""}，正在下载安装包。`);
-        appendLog(`正在下载安装包：${result.assetName ?? "安装包"}`);
-        const installerPath = await api.downloadAndInstallUpdate(result);
-        appendLog(`安装包已启动：${installerPath}`);
-        setSummary("安装包已启动，正在关闭当前版本。");
+        setSummary(`发现新版本 ${result.latestVersion ?? ""}，正在下载新版程序。`);
+        appendLog(`正在下载新版程序：${result.assetName ?? "新版 exe"}`);
+        const executablePath = await api.downloadAndOpenUpdate(result);
+        appendLog(`新版程序已启动：${executablePath}`);
+        setSummary("新版程序已启动，正在关闭当前版本。");
         return;
       }
       if (result.reason === "error") {
@@ -373,7 +373,7 @@ function App() {
         return;
       }
       if (result.reason === "missing_asset") {
-        setSummary(result.error ?? "未找到可下载的 Windows 安装包。");
+        setSummary(result.error ?? "未找到可下载的 Windows 便携版 exe。");
         return;
       }
       setSummary("当前已经是最新版本。");
@@ -808,7 +808,7 @@ function createPreviewApi(): OrderOrganizerApi {
       currentVersion: "preview",
       reason: "current",
     }),
-    downloadAndInstallUpdate: async () => "/preview/downloads/order-organizer-assistant-windows.exe",
+    downloadAndOpenUpdate: async () => "/preview/downloads/order-organizer-assistant-windows.exe",
     openPath: async () => undefined,
     onProgress: () => () => undefined,
   };

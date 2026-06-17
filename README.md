@@ -2,7 +2,7 @@
 
 可视化桌面工具，用来从企业微信邮箱或本地订单 Excel 提取订单信息，并自动生成订单整理结果。
 
-## 下载 Windows 安装包
+## 下载 Windows 便携版
 
 普通用户不需要安装 Node.js、Python 或开发依赖。打开 [Latest Release](https://github.com/1192081163/r004-order-extraction-tool/releases/latest)，下载：
 
@@ -10,7 +10,7 @@
 order-organizer-assistant-windows.exe
 ```
 
-下载后双击安装即可使用。安装包已内置订单提取所需的运行环境，首次打开后填写企业微信邮箱和邮箱授权码，或直接拖入本地 Excel 文件提取订单。
+下载后双击这个 exe 就会直接打开软件，不会出现安装向导。运行环境已经内置在 exe 中，首次打开后填写企业微信邮箱和邮箱授权码，或直接拖入本地 Excel 文件提取订单。
 
 ## 使用方式
 
@@ -58,7 +58,7 @@ py -3 -m pip install -r requirements-python-runner.txt
 npm run dist:win
 ```
 
-打包结果：
+打包结果是可直接双击打开的便携版 exe：
 
 ```text
 release/order-organizer-assistant-windows.exe
@@ -66,7 +66,7 @@ release/order-organizer-assistant-windows.exe
 
 ## GitHub Release
 
-推送到 `main` 后，GitHub Actions 会自动测试、打包，并创建新的 Latest Release。Release 页面只保留面向用户的 Windows 安装包下载入口：
+推送到 `main` 后，GitHub Actions 会自动测试、打包，并创建新的 Latest Release。Release 页面只保留面向用户的 Windows 便携版 exe 下载入口：
 
 ```text
 order-organizer-assistant-windows.exe

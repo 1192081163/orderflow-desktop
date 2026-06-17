@@ -16,9 +16,9 @@ describe("Electron packaging configuration", () => {
     expect(packageJson.author).toBe("AUSMET");
     expect(packageJson.devDependencies).toHaveProperty("electron-builder");
     expect(packageJson.scripts.dist).toBe("npm run dist:win");
-    expect(packageJson.scripts["dist:win"]).toBe("npm run build && electron-builder --win nsis");
+    expect(packageJson.scripts["dist:win"]).toBe("npm run build && electron-builder --win portable");
     expect(packageJson.scripts["dist:win:ci"]).toBe(
-      "npm run build && electron-builder --win nsis --publish never",
+      "npm run build && electron-builder --win portable --publish never",
     );
     expect(packageJson.scripts).not.toHaveProperty("dist:mac");
     expect(packageJson.build).toMatchObject({
@@ -33,13 +33,13 @@ describe("Electron packaging configuration", () => {
         { from: "extract.py", to: "python/extract.py" },
         { from: "rules", to: "python/rules" },
       ],
-      win: {
-        target: ["nsis"],
-        icon: "assets/app_icon.ico",
-      },
-      nsis: {
-        artifactName: "order-organizer-assistant-windows.${ext}",
-      },
+    win: {
+      target: ["portable"],
+      icon: "assets/app_icon.ico",
+    },
+    portable: {
+      artifactName: "order-organizer-assistant-windows.${ext}",
+    },
     });
   });
 
@@ -69,11 +69,12 @@ describe("Electron packaging configuration", () => {
     expect(workflow).toContain("if: steps.cache-python-runner.outputs.cache-hit != 'true'");
     expect(workflow).toContain("scripts/build-python-runner-win.ps1");
     expect(workflow).toContain("npm run dist:win:ci");
+    expect(workflow).not.toContain("--win nsis");
     expect(workflow).not.toContain("build-windows:\n    name: Build Windows Installer\n    runs-on: windows-latest\n    needs: test");
     expect(workflow).toContain("needs:\n      - test\n      - build-windows");
     expect(workflow).toContain('tag="build-${GITHUB_RUN_NUMBER}"');
     expect(workflow).toContain("gh release create");
-    expect(workflow).toContain("Windows 安装包已自动生成");
+    expect(workflow).toContain("Windows 便携版已自动生成");
     expect(workflow).toContain("直接下载 order-organizer-assistant-windows.exe");
     expect(workflow).toContain("--latest");
     expect(workflow).not.toContain("npm run dist:mac");

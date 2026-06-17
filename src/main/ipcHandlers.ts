@@ -8,7 +8,7 @@ import {
   type EmailListRequest,
 } from "../core/extractionService.js";
 import { loadEmailSettings, saveEmailSettings } from "../core/settings.js";
-import { checkForUpdates, downloadUpdateInstaller } from "../core/updateChecker.js";
+import { checkForUpdates, downloadUpdateExecutable } from "../core/updateChecker.js";
 import type { EmailSettings, NewOrderEmailNotification, ProgressEvent, UpdateCheckResult } from "../shared/types.js";
 
 interface LocalExtractionPayload {
@@ -27,18 +27,18 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle("updates:check", async () => checkForUpdates());
 
-  ipcMain.handle("updates:download-and-install", async (_event, update: UpdateCheckResult): Promise<string> => {
+  ipcMain.handle("updates:download-and-open", async (_event, update: UpdateCheckResult): Promise<string> => {
     if (process.platform !== "win32") {
-      throw new Error("自动安装仅支持 Windows 安装包，请在 Windows 电脑上更新。");
+      throw new Error("自动打开新版仅支持 Windows 便携版 exe，请在 Windows 电脑上更新。");
     }
 
-    const installerPath = await downloadUpdateInstaller(update, app.getPath("downloads"));
-    const errorMessage = await shell.openPath(installerPath);
+    const executablePath = await downloadUpdateExecutable(update, app.getPath("downloads"));
+    const errorMessage = await shell.openPath(executablePath);
     if (errorMessage) {
       throw new Error(errorMessage);
     }
     setTimeout(() => app.quit(), 1000);
-    return installerPath;
+    return executablePath;
   });
 
   ipcMain.handle("dialog:select-local-inputs", async (event) => {

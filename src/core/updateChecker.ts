@@ -95,35 +95,35 @@ export async function checkForUpdates(fetchImpl = fetch): Promise<UpdateCheckRes
   }
 }
 
-export async function downloadUpdateInstaller(
+export async function downloadUpdateExecutable(
   update: UpdateCheckResult,
   downloadDir: string,
   fetchImpl = fetch,
 ): Promise<string> {
   if (!update.updateAvailable || !update.downloadUrl || !update.assetName) {
-    throw new Error("更新文件不存在，请稍后重试或手动下载安装包。");
+    throw new Error("更新文件不存在，请稍后重试或手动下载新版 exe。");
   }
 
   await mkdir(downloadDir, { recursive: true });
-  const installerPath = await uniquePath(path.join(downloadDir, update.assetName));
-  const tempPath = `${installerPath}.download`;
+  const executablePath = await uniquePath(path.join(downloadDir, update.assetName));
+  const tempPath = `${executablePath}.download`;
   const currentVersion = packageJson.version ?? "1.0.0";
 
   const response = await fetchImpl(update.downloadUrl, {
     headers: { "User-Agent": `order-organizer-assistant/${currentVersion}` },
   });
   if (!response.ok || !response.body) {
-    throw new Error(`安装包下载失败：HTTP ${response.status}`);
+    throw new Error(`新版 exe 下载失败：HTTP ${response.status}`);
   }
 
   try {
     await writeFile(tempPath, Buffer.from(await response.arrayBuffer()));
-    await rename(tempPath, installerPath);
+    await rename(tempPath, executablePath);
   } finally {
     await rm(tempPath, { force: true });
   }
 
-  return installerPath;
+  return executablePath;
 }
 
 function normalizeUpdateOptions(options: UpdateComparisonOptions): { currentVersion: string; currentReleaseTag: string } {
@@ -161,7 +161,7 @@ async function uniquePath(filePath: string): Promise<string> {
     }
   }
 
-  throw new Error("下载目录中存在过多同名安装包。");
+  throw new Error("下载目录中存在过多同名新版 exe。");
 }
 
 async function pathExists(filePath: string): Promise<boolean> {

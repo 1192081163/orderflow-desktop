@@ -11,8 +11,8 @@
     "build:renderer": "vite build",
     "dev": "npm run build:main && vite --host 127.0.0.1",
     "dist": "npm run dist:win",
-    "dist:win": "npm run build && electron-builder --win nsis",
-    "dist:win:ci": "npm run build && electron-builder --win nsis --publish never",
+    "dist:win": "npm run build && electron-builder --win portable",
+    "dist:win:ci": "npm run build && electron-builder --win portable --publish never",
     "start": "npm run build && electron .",
     "test": "vitest run --config vitest.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
@@ -71,14 +71,11 @@
     ],
     "win": {
       "target": [
-        "nsis"
+        "portable"
       ],
       "icon": "assets/app_icon.ico"
     },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
+    "portable": {
       "artifactName": "order-organizer-assistant-windows.${ext}"
     }
   }

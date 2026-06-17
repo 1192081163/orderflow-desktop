@@ -100,9 +100,9 @@ describe("renderer React stack", () => {
     expect(appSource).toContain("订单附件");
 expect(appSource).toContain("messageUids");
 expect(appSource).toContain("listEmails");
-expect(appSource).toContain("正在下载安装包");
-expect(appSource).toContain("api.downloadAndInstallUpdate(result)");
-expect(appSource).toContain("安装包已启动");
+expect(appSource).toContain("正在下载新版程序");
+expect(appSource).toContain("api.downloadAndOpenUpdate(result)");
+expect(appSource).toContain("新版程序已启动");
 expect(appSource).not.toContain("下载地址：");
 expect(stylesSource).toContain(".failure-list");
     expect(stylesSource).toContain(".secondary-command-actions");
@@ -110,10 +110,10 @@ expect(stylesSource).toContain(".failure-list");
     expect(stylesSource).not.toContain(".local-extraction-details");
     expect(stylesSource).toContain(".mail-row.pending");
 expect(preloadSource).toContain("emails:list");
-expect(preloadSource).toContain("downloadAndInstallUpdate");
-expect(preloadSource).toContain("updates:download-and-install");
+expect(preloadSource).toContain("downloadAndOpenUpdate");
+expect(preloadSource).toContain("updates:download-and-open");
 expect(ipcSource).toContain("emails:list");
-expect(ipcSource).toContain("updates:download-and-install");
+expect(ipcSource).toContain("updates:download-and-open");
 });
 
   test("only keeps the output folder and Excel buttons in the result panel", async () => {

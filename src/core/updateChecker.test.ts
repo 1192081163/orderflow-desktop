@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from "vitest";
 
 import {
   checkForUpdates,
-  downloadUpdateInstaller,
+  downloadUpdateExecutable,
   updateInfoFromReleasePayload,
   WINDOWS_ASSET_NAME,
 } from "./updateChecker.js";
@@ -88,12 +88,12 @@ describe("update checker", () => {
     expect(result.error).toContain("network down");
   });
 
-  test("downloads update installer to a unique local path", async () => {
+  test("downloads update executable to a unique local path", async () => {
     const downloadDir = await mkdtemp(path.join(os.tmpdir(), "r004-update-"));
     tempDirs.push(downloadDir);
-    await writeFile(path.join(downloadDir, WINDOWS_ASSET_NAME), "old installer");
+    await writeFile(path.join(downloadDir, WINDOWS_ASSET_NAME), "old executable");
 
-    const installerPath = await downloadUpdateInstaller(
+    const executablePath = await downloadUpdateExecutable(
       {
         updateAvailable: true,
         currentVersion: "1.0.0",
@@ -106,21 +106,21 @@ describe("update checker", () => {
       async (url, init) => {
         expect(url).toBe("https://download.example/app.exe");
         expect(JSON.stringify(init?.headers)).toContain("order-organizer-assistant/");
-        return new Response(new TextEncoder().encode("new installer"));
+        return new Response(new TextEncoder().encode("new executable"));
       },
     );
 
-    expect(path.basename(installerPath)).toBe("order-organizer-assistant-windows-1.exe");
-    expect(await readFile(installerPath, "utf8")).toBe("new installer");
-    await expect(access(`${installerPath}.download`)).rejects.toBeTruthy();
+    expect(path.basename(executablePath)).toBe("order-organizer-assistant-windows-1.exe");
+    expect(await readFile(executablePath, "utf8")).toBe("new executable");
+    await expect(access(`${executablePath}.download`)).rejects.toBeTruthy();
   });
 
-  test("rejects installer download when release has no downloadable asset", async () => {
+  test("rejects executable download when release has no downloadable asset", async () => {
     const downloadDir = await mkdtemp(path.join(os.tmpdir(), "r004-update-"));
     tempDirs.push(downloadDir);
 
     await expect(
-      downloadUpdateInstaller(
+      downloadUpdateExecutable(
         {
           updateAvailable: false,
           currentVersion: "1.0.0",

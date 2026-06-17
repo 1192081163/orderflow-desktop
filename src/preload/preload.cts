@@ -19,7 +19,7 @@ export interface OrderOrganizerApi {
   extractEmail: (payload: EmailExtractionRequest) => Promise<EmailExtractionResult>;
   notifyNewOrderEmails: (notification: NewOrderEmailNotification) => Promise<boolean>;
   checkUpdates: () => Promise<UpdateCheckResult>;
-  downloadAndInstallUpdate: (update: UpdateCheckResult) => Promise<string>;
+  downloadAndOpenUpdate: (update: UpdateCheckResult) => Promise<string>;
   openPath: (targetPath: string) => Promise<void>;
   onProgress: (callback: (event: ProgressEvent) => void) => () => void;
 }
@@ -33,7 +33,7 @@ const api: OrderOrganizerApi = {
   extractEmail: (payload) => ipcRenderer.invoke("orders:extract-email", payload),
   notifyNewOrderEmails: (notification) => ipcRenderer.invoke("notifications:new-order-emails", notification),
   checkUpdates: () => ipcRenderer.invoke("updates:check"),
-  downloadAndInstallUpdate: (update) => ipcRenderer.invoke("updates:download-and-install", update),
+  downloadAndOpenUpdate: (update) => ipcRenderer.invoke("updates:download-and-open", update),
   openPath: (targetPath) => ipcRenderer.invoke("shell:open-path", targetPath),
   onProgress: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, progress: ProgressEvent) => {

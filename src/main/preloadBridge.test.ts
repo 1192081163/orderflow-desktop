@@ -34,11 +34,11 @@ describe("Electron preload bridge", () => {
 
 expect(preloadSource).toContain("notifyNewOrderEmails");
 expect(preloadSource).toContain("notifications:new-order-emails");
-expect(preloadSource).toContain("downloadAndInstallUpdate");
-expect(preloadSource).toContain("updates:download-and-install");
+expect(preloadSource).toContain("downloadAndOpenUpdate");
+expect(preloadSource).toContain("updates:download-and-open");
 expect(ipcSource).toContain("notifications:new-order-emails");
-expect(ipcSource).toContain("updates:download-and-install");
-expect(ipcSource).toContain("downloadUpdateInstaller");
+expect(ipcSource).toContain("updates:download-and-open");
+expect(ipcSource).toContain("downloadUpdateExecutable");
 expect(ipcSource).toContain("app.quit");
 });
 });
