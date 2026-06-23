@@ -1248,7 +1248,7 @@ describe("extractWorkbook", () => {
 
     const row = await extractWorkbook(filePath);
 
-    expect(row.values[9]).toBe("0.6G/0.6CB/1Z");
+    expect(row.values[9]).toBe("0.55G/0.55CB/1Z");
     expect(row.values[10]).toBe(3);
     expect(row.values[11]).toBe("SPLIT");
     expect(row.values[12]).toBe(2);
@@ -1439,7 +1439,7 @@ describe("extractWorkbook", () => {
 
     const row = await extractWorkbook(filePath, { inferManual: true });
 
-    expect(row.values[9]).toBe("0.6G");
+    expect(row.values[9]).toBe("0.55G");
     expect(row.values[10]).toBe(2);
     expect(row.values[11]).toBe("MODERN");
     expect(row.values[12]).toBe(1);

@@ -1909,9 +1909,6 @@ function hasColorbondColour(lowerText: string): boolean {
 }
 
 function normalizeThickness(value: string): string {
-  if (value === "0.55") {
-    return "0.6";
-  }
   if (value === "1.05") {
     return "1";
   }
