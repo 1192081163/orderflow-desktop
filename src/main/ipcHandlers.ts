@@ -1,14 +1,16 @@
 import { BrowserWindow, Notification, app, dialog, ipcMain, shell } from "electron";
 
-import {
-  extractLocalOrders,
-  type EmailExtractionRequest,
-  type EmailListRequest,
-} from "../core/extractionService.js";
+import { type EmailExtractionRequest, type EmailListRequest } from "../core/extractionService.js";
 import { loadEmailSettings, saveEmailSettings } from "../core/settings.js";
 import { checkForUpdates, downloadUpdateExecutable } from "../core/updateChecker.js";
 import type { EmailSettings, NewOrderEmailNotification, ProgressEvent, UpdateCheckResult } from "../shared/types.js";
-import { extractDesktopEmailOrders, listDesktopEmails, subscribeDesktopEmailUpdates, type DesktopEmailSubscription } from "./emailActions.js";
+import {
+  extractDesktopEmailOrders,
+  extractDesktopLocalOrders,
+  listDesktopEmails,
+  subscribeDesktopEmailUpdates,
+  type DesktopEmailSubscription,
+} from "./emailActions.js";
 
 interface LocalExtractionPayload {
   paths?: string[];
@@ -80,7 +82,7 @@ export function registerIpcHandlers(): void {
   );
 
   ipcMain.handle("orders:extract-local", async (event, payload: LocalExtractionPayload) =>
-    extractLocalOrders(
+    extractDesktopLocalOrders(
       {
         paths: Array.isArray(payload.paths) ? payload.paths : [],
         recursive: payload.recursive,

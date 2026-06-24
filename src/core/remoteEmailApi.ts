@@ -1,9 +1,12 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
+import { resolveInputPaths } from "./fileScanner.js";
+import { defaultOutputPaths } from "./outputPaths.js";
 import { appConfigDir } from "./settings.js";
-import type { EmailExtractionRequest, EmailExtractionResult, EmailListRequest } from "./extractionService.js";
-import type { EmailListResult, EmailNewMessagesEvent, OutputPaths } from "../shared/types.js";
+import type { EmailExtractionRequest, EmailExtractionResult, EmailListRequest, LocalExtractionRequest } from "./extractionService.js";
+import { writeAuditCsv, writeCsv, writeXlsx } from "./writers.js";
+import type { EmailListResult, EmailNewMessagesEvent, ExtractionResult, OutputPaths } from "../shared/types.js";
 
 export interface RemoteEmailApiConfig {
   baseUrl: string;
@@ -76,6 +79,35 @@ export class RemoteEmailApiClient {
         ...result.extraction,
         outputs: { ...EMPTY_OUTPUTS },
       },
+    };
+  }
+
+  async extractLocal(request: LocalExtractionRequest): Promise<ExtractionResult> {
+    const resolution = await resolveInputPaths(request.paths, { recursive: request.recursive ?? false });
+    if (resolution.inputFiles.length === 0) {
+      throw new Error("No valid order Excel files found.");
+    }
+    const files = await Promise.all(
+      resolution.inputFiles.map(async (filePath, index) => ({
+        filename: `${String(index + 1).padStart(4, "0")}-${path.basename(filePath)}`,
+        contentBase64: (await readFile(filePath)).toString("base64"),
+      })),
+    );
+    const remoteResult = await this.post<ExtractionResult>("/api/orders/extract", {
+      files,
+      recursive: false,
+      inferManual: request.inferManual,
+    });
+    const outputs = defaultOutputPaths(resolution.baseDir);
+    await writeCsv(remoteResult.rows, outputs.csvOutput);
+    await writeXlsx(remoteResult.rows, outputs);
+    await writeAuditCsv(remoteResult.rows, outputs.auditOutput);
+
+    return {
+      ...remoteResult,
+      inputFiles: resolution.inputFiles,
+      skippedFiles: [...resolution.skippedFiles, ...remoteResult.skippedFiles],
+      outputs,
     };
   }
 

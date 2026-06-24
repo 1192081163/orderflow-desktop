@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -96,6 +96,38 @@ describe("remote email API client", () => {
       xlsxOutput: "",
       auditOutput: "",
     });
+  });
+
+  test("uploads local files to remote extraction endpoint and writes local outputs", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "remote-local-extract-"));
+    const localFile = path.join(tempDir, "order.xlsx");
+    await writeFile(localFile, "excel-content", "utf8");
+    const received: Array<{ url?: string; authorization?: string; body: any }> = [];
+    const baseUrl = await listenWithJsonHandler(async (request, body) => {
+      received.push({ url: request.url, authorization: headerValue(request.headers.authorization), body });
+      return {
+        inputFiles: ["/server/uploads/order.xlsx"],
+        rows: [{ values: ["PO-1"], notes: ["server-rule"], manualCheck: [], sourceFile: "order.xlsx" }],
+        skippedFiles: [],
+        failures: [],
+        outputs: {
+          outputDir: "/server/output",
+          csvOutput: "/server/output/extracted_job_rows.csv",
+          xlsxOutput: "/server/output/orders.xlsx",
+          auditOutput: "/server/output/audit.csv",
+        },
+      };
+    });
+
+    const client = new RemoteEmailApiClient({ baseUrl, token: "api-token" });
+    const result = await client.extractLocal({ paths: [localFile], inferManual: true });
+
+    expect(received[0]?.url).toBe("/api/orders/extract");
+    expect(received[0]?.authorization).toBe("Bearer api-token");
+    expect(Buffer.from(received[0]?.body.files[0].contentBase64, "base64").toString("utf8")).toBe("excel-content");
+    expect(result.inputFiles).toEqual([localFile]);
+    expect(result.outputs.outputDir).toBe(path.join(tempDir, "order_extraction_output"));
+    await expect(readFile(result.outputs.csvOutput, "utf8")).resolves.toContain("PO-1");
   });
 
   test("streams new-message events from remote event endpoint", async () => {

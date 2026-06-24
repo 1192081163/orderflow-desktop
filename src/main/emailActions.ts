@@ -1,16 +1,20 @@
 import {
   extractEmailOrders,
+  extractLocalOrders,
   listEmailMessages,
   type EmailExtractionRequest,
   type EmailExtractionResult,
   type EmailListRequest,
+  type LocalExtractionRequest,
 } from "../core/extractionService.js";
 import { loadRemoteEmailApiConfig, RemoteEmailApiClient } from "../core/remoteEmailApi.js";
 import type { EmailListResult, EmailNewMessagesEvent, ProgressEvent } from "../shared/types.js";
+import type { ExtractionResult } from "../shared/types.js";
 
 export interface RemoteEmailClient {
   listEmails(request: EmailListRequest): Promise<EmailListResult>;
   extractEmail(request: EmailExtractionRequest): Promise<EmailExtractionResult>;
+  extractLocal?(request: LocalExtractionRequest): Promise<ExtractionResult>;
   subscribeNewMessages?(
     onEvent: (event: EmailNewMessagesEvent) => void,
     options?: { signal?: AbortSignal },
@@ -25,6 +29,7 @@ interface DesktopEmailDependencies {
   loadRemoteEmailClient?: () => Promise<RemoteEmailClient | undefined>;
   listEmailMessages?: (request: EmailListRequest) => Promise<EmailListResult>;
   extractEmailOrders?: (request: EmailExtractionRequest, progress?: (event: ProgressEvent) => void) => Promise<EmailExtractionResult>;
+  extractLocalOrders?: (request: LocalExtractionRequest, progress?: (event: ProgressEvent) => void) => Promise<ExtractionResult>;
 }
 
 export async function listDesktopEmails(
@@ -52,6 +57,20 @@ export async function extractDesktopEmailOrders(
 
   const localExtractEmailOrders = dependencies.extractEmailOrders ?? extractEmailOrders;
   return localExtractEmailOrders(request, progress);
+}
+
+export async function extractDesktopLocalOrders(
+  request: LocalExtractionRequest,
+  progress?: (event: ProgressEvent) => void,
+  dependencies: DesktopEmailDependencies = {},
+): Promise<ExtractionResult> {
+  const remoteClient = await loadConfiguredRemoteEmailClient(dependencies);
+  if (remoteClient?.extractLocal) {
+    return remoteClient.extractLocal(request);
+  }
+
+  const localExtractLocalOrders = dependencies.extractLocalOrders ?? extractLocalOrders;
+  return localExtractLocalOrders(request, progress);
 }
 
 export async function subscribeDesktopEmailUpdates(
