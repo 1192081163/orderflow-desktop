@@ -139,6 +139,7 @@ def run_extraction(
                 progress(index, total, path, "completed")
 
     rows = extract.dedupe_latest_rows(rows, resolution.input_files)
+    rows = extract.sort_rows_by_ideal_delivery_date(rows)
     extract.write_csv(rows, outputs.csv_output)
     extract.write_xlsx(rows, outputs.xlsx_output, resolution.base_dir, resolution.input_files)
     extract.write_audit_csv(rows, outputs.audit_output)

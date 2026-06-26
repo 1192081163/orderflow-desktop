@@ -130,6 +130,36 @@ describe("remote email API client", () => {
     await expect(readFile(result.outputs.csvOutput, "utf8")).resolves.toContain("PO-1");
   });
 
+  test("sorts remote local extraction outputs by ideal delivery date", async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), "remote-local-extract-sort-"));
+    const localFile = path.join(tempDir, "order.xlsx");
+    await writeFile(localFile, "excel-content", "utf8");
+    const baseUrl = await listenWithJsonHandler(async () => ({
+      inputFiles: ["/server/uploads/order.xlsx"],
+      rows: [
+        remoteOrderRow("LATE", "2026-06-20"),
+        remoteOrderRow("BLANK", ""),
+        remoteOrderRow("EARLY", "2026-06-01"),
+      ],
+      skippedFiles: [],
+      failures: [],
+      outputs: {
+        outputDir: "/server/output",
+        csvOutput: "/server/output/extracted_job_rows.csv",
+        xlsxOutput: "/server/output/orders.xlsx",
+        auditOutput: "/server/output/audit.csv",
+      },
+    }));
+
+    const client = new RemoteEmailApiClient({ baseUrl, token: "api-token" });
+    const result = await client.extractLocal({ paths: [localFile], inferManual: true });
+
+    expect(result.rows.map((row) => row.values[1])).toEqual(["EARLY", "LATE", "BLANK"]);
+    const csv = await readFile(result.outputs.csvOutput, "utf8");
+    expect(csv.indexOf(",EARLY,")).toBeLessThan(csv.indexOf(",LATE,"));
+    expect(csv.indexOf(",LATE,")).toBeLessThan(csv.indexOf(",BLANK,"));
+  });
+
   test("streams new-message events from remote event endpoint", async () => {
     const received: Array<{ url?: string; authorization?: string }> = [];
     const baseUrl = await listenWithRawHandler((request, response) => {
@@ -212,6 +242,13 @@ describe("remote email API client", () => {
     });
   });
 });
+
+function remoteOrderRow(po: string, idealDate: string) {
+  const values = Array.from<string | number | null>({ length: 24 }).fill(null);
+  values[1] = po;
+  values[14] = idealDate || null;
+  return { values, notes: [], manualCheck: [], sourceFile: `${po}.xlsx` };
+}
 
 async function listenWithJsonHandler(handler: (request: { url?: string; headers: Record<string, string | string[] | undefined> }, body: unknown) => Promise<unknown> | unknown): Promise<string> {
   activeServer = createServer(async (request, response) => {

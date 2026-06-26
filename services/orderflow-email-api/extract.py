@@ -60,6 +60,7 @@ TRACK_HEADERS = [
 ]
 
 COLUMN_LETTERS = [chr(ord("A") + idx) for idx in range(len(TRACK_HEADERS))]
+IDEAL_D_DATE_INDEX = 14
 
 MANUAL_OR_SCHEDULED_COLUMNS = {
     7,   # H Over Size
@@ -2669,6 +2670,16 @@ def dedupe_latest_rows(rows: list[ExtractedRow], input_files: list[Path]) -> lis
     return [row for _, row in sorted(indexed_rows, key=lambda item: item[0])]
 
 
+def sort_rows_by_ideal_delivery_date(rows: list[ExtractedRow]) -> list[ExtractedRow]:
+    def sort_key(item: tuple[int, ExtractedRow]) -> tuple[bool, dt.date, int]:
+        index, row = item
+        value = row.values[IDEAL_D_DATE_INDEX] if len(row.values) > IDEAL_D_DATE_INDEX else None
+        day = parse_date(value)
+        return (day is None, day or dt.date.max, index)
+
+    return [row for _, row in sorted(enumerate(rows), key=sort_key)]
+
+
 def write_csv(rows: list[ExtractedRow], output: Path) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w", newline="", encoding="utf-8-sig") as handle:
@@ -2937,6 +2948,7 @@ def main() -> int:
         rows.append(extract_workbook(path, infer_manual=args.infer_manual))
     rows = [row for row in rows if row_has_order_payload(row)]
     rows = dedupe_latest_rows(rows, input_files)
+    rows = sort_rows_by_ideal_delivery_date(rows)
 
     write_csv(rows, output)
     if args.xlsx_output:

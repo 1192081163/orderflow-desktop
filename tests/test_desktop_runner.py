@@ -24,14 +24,14 @@ def make_non_order_excel(path: Path) -> None:
     wb.save(path)
 
 
-def make_order_workbook(path: Path, job: str) -> None:
+def make_order_workbook(path: Path, job: str, delivery_date: str = "2026-06-15", po: str = "PO-1") -> None:
     wb = Workbook()
     ws = wb.active
     ws.title = "Worksheet"
     ws["C1"] = job
     ws["C2"] = "Builder"
-    ws["C5"] = "2026-06-15"
-    ws["C6"] = "PO-1"
+    ws["C5"] = delivery_date
+    ws["C6"] = po
     headers = ["Material", "Stock", "Qty", "Profile", "B/O", "Reveal Height", "Reveal Width"]
     for col, value in enumerate(headers, start=1):
         ws.cell(9, col).value = value
@@ -111,6 +111,19 @@ def test_run_extraction_keeps_latest_source_version_for_duplicate_jobs(tmp_path:
 
     assert len(result.rows) == 1
     assert result.rows[0].source_file == newer.name
+
+
+def test_run_extraction_sorts_rows_by_ideal_delivery_date(tmp_path: Path) -> None:
+    later = tmp_path / "100 late.xlsx"
+    blank = tmp_path / "200 blank.xlsx"
+    earlier = tmp_path / "300 early.xlsx"
+    make_order_workbook(later, "30002", delivery_date="2026-06-20", po="LATE")
+    make_order_workbook(earlier, "30001", delivery_date="2026-06-01", po="EARLY")
+    make_order_workbook(blank, "30003", delivery_date="", po="BLANK")
+
+    result = run_extraction([later, blank, earlier])
+
+    assert [row.values[1] for row in result.rows] == ["EARLY", "LATE", "BLANK"]
 
 
 def test_run_extraction_skips_excel_files_without_order_rules(tmp_path: Path) -> None:

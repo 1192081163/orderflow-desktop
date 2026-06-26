@@ -5,6 +5,7 @@ import ExcelJS from "exceljs";
 import { TRACK_HEADERS, type ExtractedOrderRow, type ExtractionResult, type ProgressEvent } from "../shared/types.js";
 import { resolveInputPaths } from "./fileScanner.js";
 import { defaultOutputPaths } from "./outputPaths.js";
+import { sortExtractedRowsByIdealDate } from "./rowSorting.js";
 import { writeAuditCsv, writeCsv, writeXlsx } from "./writers.js";
 
 const BUILDER_ALIASES: Record<string, string> = {
@@ -358,14 +359,15 @@ export async function runOrderExtraction(paths: string[], options: RunExtraction
   }
 
   const dedupedRows = dedupeLatestRows(rowEntries);
+  const sortedRows = sortExtractedRowsByIdealDate(dedupedRows);
 
-  await writeCsv(dedupedRows, outputs.csvOutput);
-  await writeXlsx(dedupedRows, outputs);
-  await writeAuditCsv(dedupedRows, outputs.auditOutput);
+  await writeCsv(sortedRows, outputs.csvOutput);
+  await writeXlsx(sortedRows, outputs);
+  await writeAuditCsv(sortedRows, outputs.auditOutput);
 
   return {
     inputFiles: resolution.inputFiles,
-    rows: dedupedRows,
+    rows: sortedRows,
     skippedFiles: resolution.skippedFiles,
     failures,
     outputs,

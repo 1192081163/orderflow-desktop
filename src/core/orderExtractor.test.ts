@@ -1932,8 +1932,28 @@ describe("runOrderExtraction", () => {
     expect(result.rows[0].values[16]).toBe("Friday");
   });
 
- test("skips Excel files without order content", async () => {
- const orderPath = path.join(tempRoot, "29698 order.xlsx");
+  test("sorts extracted outputs by ideal delivery date", async () => {
+    const laterPath = path.join(tempRoot, "30002 later.xlsx");
+    const earlierPath = path.join(tempRoot, "30001 earlier.xlsx");
+    const blankPath = path.join(tempRoot, "30003 blank.xlsx");
+    await makeWorksheetOrderWithFields(laterPath, { job: "Job 30002", po: "LATE", deliveryDate: "2026-06-20" });
+    await makeWorksheetOrderWithFields(earlierPath, { job: "Job 30001", po: "EARLY", deliveryDate: "2026-06-01" });
+    await makeWorksheetOrderWithFields(blankPath, { job: "Job 30003", po: "BLANK", deliveryDate: "" });
+
+    const result = await runOrderExtraction([laterPath, blankPath, earlierPath]);
+
+    expect(result.rows.map((row) => row.values[1])).toEqual(["EARLY", "LATE", "BLANK"]);
+    const csv = await readFile(result.outputs.csvOutput, "utf8");
+    expect(csv.indexOf(",EARLY,")).toBeLessThan(csv.indexOf(",LATE,"));
+    expect(csv.indexOf(",LATE,")).toBeLessThan(csv.indexOf(",BLANK,"));
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(result.outputs.xlsxOutput);
+    const worksheet = workbook.worksheets[0];
+    expect([2, 3, 4].map((rowNumber) => worksheet.getCell(rowNumber, 2).value)).toEqual(["EARLY", "LATE", "BLANK"]);
+  });
+
+  test("skips Excel files without order content", async () => {
+    const orderPath = path.join(tempRoot, "29698 order.xlsx");
  const reportPath = path.join(tempRoot, "weekly report.xlsx");
  await makeWorksheetOrder(orderPath);
  await makeNonOrderWorkbook(reportPath);

@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { resolveInputPaths } from "./fileScanner.js";
 import { defaultOutputPaths } from "./outputPaths.js";
+import { sortExtractedRowsByIdealDate } from "./rowSorting.js";
 import { appConfigDir } from "./settings.js";
 import type { EmailExtractionRequest, EmailExtractionResult, EmailListRequest, LocalExtractionRequest } from "./extractionService.js";
 import { writeAuditCsv, writeCsv, writeXlsx } from "./writers.js";
@@ -98,13 +99,15 @@ export class RemoteEmailApiClient {
       recursive: false,
       inferManual: request.inferManual,
     });
+    const rows = sortExtractedRowsByIdealDate(remoteResult.rows);
     const outputs = defaultOutputPaths(resolution.baseDir);
-    await writeCsv(remoteResult.rows, outputs.csvOutput);
-    await writeXlsx(remoteResult.rows, outputs);
-    await writeAuditCsv(remoteResult.rows, outputs.auditOutput);
+    await writeCsv(rows, outputs.csvOutput);
+    await writeXlsx(rows, outputs);
+    await writeAuditCsv(rows, outputs.auditOutput);
 
     return {
       ...remoteResult,
+      rows,
       inputFiles: resolution.inputFiles,
       skippedFiles: [...resolution.skippedFiles, ...remoteResult.skippedFiles],
       outputs,
